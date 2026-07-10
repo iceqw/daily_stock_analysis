@@ -44,6 +44,11 @@ venv/
 ENV/
 env/
 .venv/
+.venv-codex/
+
+# AI 协作与工具临时目录
+.workbuddy/
+.agents/
 
 # IDE
 .idea/
