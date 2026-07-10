@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] Phase 3 新增股票长期认知档案页：Web 新增 `/stocks/:stockCode` StockDetailPage，集成当前分析、AI Opinion、Investment Timeline、手动投资日志创建，以及 Investment Journal AI 整理状态刷新。
+- [文档] Phase 3 Freeze 项目整理：新增 `docs/CURRENT_SYSTEM_STATUS.md` 项目完整状态文档（定位、架构、数据流、已完成阶段、数据库表、API 能力、未开发功能、下一阶段方向）；更新 `.gitignore` 排除 `.venv-codex/`、`.workbuddy/`、`.agents/` 临时目录。
+- [新功能] 新增 Phase 2.2 Investment Journal AI 结构化后端闭环：手动触发结构化、复用 task_queue 与 GenerationBackend、结构化结果写入 `structured_output_json`、失败回写 `structured_error`、同一 journal entry 支持 retry 且始终保留 `raw_content`
+- [新功能] 新增 Phase 2.1 AI Opinion 真实生成闭环：手动触发 pending opinion、复用 task_queue 异步执行、基于 GenerationBackend 生成结构化 output_json、失败状态流转与历史版本保留、analysis_history 删除后保留 ai_opinions 并标记 source_status=deleted。
+- [新功能] 新增 AI Opinion 与个股投资日志阶段 1 后端基础能力：`analysis_history` 关联的版本化 `ai_opinions`、按 `stock_code + market` 查询的 `investment_journal_entries`、手动投资笔记 CRUD、自动分析日志幂等同步，以及“分析删除后保留日志快照”的删除策略。
+- [改进] 通知去重默认值启用：`NOTIFICATION_DEDUP_TTL_SECONDS` 从 0 调整为 3600（1小时），`NOTIFICATION_COOLDOWN_SECONDS` 从 0 调整为 600（10分钟），新部署默认即享去重保护。
+- [改进] 通知去重状态持久化至 SQLite（新增 `notification_dedup_entries` 表），实现跨进程互斥，Docker Compose 双服务模式下不再重复发送。
+- [改进] Pipeline 通知分发收敛至 `NotificationService.send_with_results()` 统一入口，移除 400+ 行重复的噪声控制和渠道分发逻辑，新增 `channel_content_overrides` 参数支持渠道级内容定制。
+- [改进] 告警 Worker 的 DB 冷却写入增加指数退避重试（最多 3 次，间隔 1/2/4 秒），全部失败后降级至进程内 fingerprint 保护，日志级别提升为 ERROR。
 - [改进] GitHub Actions 每日分析工作流补齐 TickFlow 数据源环境变量映射，并收敛 README 数据源稳定性说明到完整指南。
 - [修复] WebUI 启动时显式 `--host` / `--port` 不再被 `.env` 中的 `WEBUI_HOST` / `WEBUI_PORT` 覆盖，未传 CLI 参数时统一使用解析后的运行时配置。
 - [改进] GitHub Actions: 每日分析工作流（`00-daily-analysis.yml`）新增钉钉通知环境变量映射，支持在云端定时任务中直接使用钉钉机器人。
