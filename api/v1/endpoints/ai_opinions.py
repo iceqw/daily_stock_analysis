@@ -1,0 +1,189 @@
+# -*- coding: utf-8 -*-
+"""AI opinion API endpoints."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from api.v1.schemas.ai_opinions import (
+    AIOpinionGenerateAccepted,
+    AIOpinionItem,
+    AIOpinionListResponse,
+)
+from api.v1.schemas.common import ErrorResponse
+from src.services.ai_opinion_generation_service import AIOpinionGenerationService
+from src.services.ai_opinion_service import (
+    AIOpinionConflictError,
+    AIOpinionContextUnavailableError,
+    AIOpinionNotFoundError,
+    AIOpinionService,
+    AIOpinionSourceUnavailableError,
+)
+from src.services.task_queue import get_task_queue
+
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def _bad_request(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=400, detail={"error": "validation_error", "message": str(exc)})
+
+
+def _not_found(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=404, detail={"error": "not_found", "message": str(exc)})
+
+
+def _conflict(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=409, detail={"error": "conflict", "message": str(exc)})
+
+
+def _unprocessable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"error": "context_unavailable", "message": str(exc)},
+    )
+
+
+def _internal_error(message: str, exc: Exception) -> HTTPException:
+    logger.error("%s: %s", message, exc, exc_info=True)
+    return HTTPException(status_code=500, detail={"error": "internal_error", "message": message})
+
+
+@router.get(
+    "",
+    response_model=AIOpinionListResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="List AI opinions for one analysis_history",
+)
+def list_ai_opinions(
+    analysis_history_id: int = Query(..., gt=0),
+    current_only: bool = Query(False),
+) -> AIOpinionListResponse:
+    service = AIOpinionService()
+    try:
+        return AIOpinionListResponse(
+            **service.list_opinions(
+                analysis_history_id=analysis_history_id,
+                current_only=current_only,
+            )
+        )
+    except AIOpinionNotFoundError as exc:
+        raise _not_found(exc)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("List AI opinions failed", exc)
+
+
+@router.get(
+    "/{opinion_id}",
+    response_model=AIOpinionItem,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Get one AI opinion",
+)
+def get_ai_opinion(opinion_id: int) -> AIOpinionItem:
+    service = AIOpinionService()
+    try:
+        return AIOpinionItem(**service.get_opinion(opinion_id))
+    except AIOpinionNotFoundError as exc:
+        raise _not_found(exc)
+    except Exception as exc:
+        raise _internal_error("Get AI opinion failed", exc)
+
+
+@router.post(
+    "/generate/{analysis_history_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AIOpinionGenerateAccepted,
+    responses={
+        400: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+    summary="Create a pending AI opinion generation task",
+)
+def generate_ai_opinion(analysis_history_id: int) -> AIOpinionGenerateAccepted:
+    service = AIOpinionService()
+    try:
+        created = service.create_pending_generation(analysis_history_id=analysis_history_id)
+        opinion_id = int(created["id"])
+        task_id = f"ai_opinion_generate_{opinion_id}_{uuid.uuid4().hex}"
+        task = get_task_queue().submit_background_task(
+            lambda: AIOpinionGenerationService().generate(opinion_id),
+            stock_code=f"ai_opinion_{created['analysis_history_id'] or opinion_id}",
+            stock_name=f"AI Opinion {opinion_id}",
+            report_type="ai_opinion_generation",
+            message="AI Opinion generation task accepted",
+            task_id=task_id,
+            trace_id=task_id,
+        )
+        return AIOpinionGenerateAccepted(
+            opinion=AIOpinionItem(**created),
+            task_id=task.task_id,
+            trace_id=task.trace_id or task.task_id,
+            task_status=task.status.value,
+            message=task.message,
+        )
+    except AIOpinionNotFoundError as exc:
+        raise _not_found(exc)
+    except AIOpinionConflictError as exc:
+        raise _conflict(exc)
+    except AIOpinionContextUnavailableError as exc:
+        raise _unprocessable(exc)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Create AI opinion generation task failed", exc)
+
+
+@router.post(
+    "/{opinion_id}/regenerate",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AIOpinionGenerateAccepted,
+    responses={
+        400: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+    summary="Create a new AI opinion regeneration task",
+)
+def regenerate_ai_opinion(opinion_id: int) -> AIOpinionGenerateAccepted:
+    service = AIOpinionService()
+    try:
+        created = service.regenerate_opinion(opinion_id)
+        new_opinion_id = int(created["id"])
+        task_id = f"ai_opinion_generate_{new_opinion_id}_{uuid.uuid4().hex}"
+        task = get_task_queue().submit_background_task(
+            lambda: AIOpinionGenerationService().generate(new_opinion_id),
+            stock_code=f"ai_opinion_{created['analysis_history_id'] or new_opinion_id}",
+            stock_name=f"AI Opinion {new_opinion_id}",
+            report_type="ai_opinion_generation",
+            message="AI Opinion regeneration task accepted",
+            task_id=task_id,
+            trace_id=task_id,
+        )
+        return AIOpinionGenerateAccepted(
+            opinion=AIOpinionItem(**created),
+            task_id=task.task_id,
+            trace_id=task.trace_id or task.task_id,
+            task_status=task.status.value,
+            message=task.message,
+        )
+    except AIOpinionNotFoundError as exc:
+        raise _not_found(exc)
+    except (AIOpinionConflictError, AIOpinionSourceUnavailableError) as exc:
+        raise _conflict(exc)
+    except AIOpinionContextUnavailableError as exc:
+        raise _unprocessable(exc)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Create AI opinion regeneration task failed", exc)
