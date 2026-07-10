@@ -1,20 +1,24 @@
 # -*- coding: utf-8 -*-
 """In-process notification noise-control helpers.
 
-The state in this module is intentionally process-local. It provides a small
-runtime guard for duplicate/cooldown/quiet-hour suppression without adding
-persistent storage, file locks, or cross-worker coordination.
+The primary state is process-local memory for hot-path performance, with an
+optional SQLite persistence layer for cross-process dedup (e.g. Docker
+Compose dual-service deployments).  DB operations are fail-open: on any
+error the module falls back to in-memory checks without blocking sends.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 try:  # pragma: no cover - Python <3.9 fallback is not expected in CI.
@@ -69,6 +73,152 @@ _cooldown_expires_at: Dict[str, float] = {}
 _dedup_inflight_until: Dict[str, Tuple[float, str]] = {}
 _cooldown_inflight_until: Dict[str, Tuple[float, str]] = {}
 _state_lock = threading.Lock()
+
+# ---- SQLite persistence helpers (cross-process dedup) --------------------
+
+_DB_DEDUP_TABLE = "notification_dedup_entries"
+_DB_CLEANUP_INTERVAL_SEC = 300  # minimum interval between expired-row cleanups
+_last_db_cleanup_at: float = 0.0
+_db_table_ready: bool = False
+
+
+def _resolve_db_path() -> Optional[str]:
+    """Return the SQLite database path from config, or None if unavailable."""
+    return os.getenv("DATABASE_PATH", "./data/stock_analysis.db") or "./data/stock_analysis.db"
+
+
+def _get_db_connection():
+    """Get a new sqlite3 connection (fail-open: return None on error)."""
+    import sqlite3
+
+    db_path = _resolve_db_path()
+    if not db_path:
+        return None
+    try:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path, timeout=5)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    except Exception:
+        logger.debug("notification_noise: DB connect failed, falling back to in-memory only")
+        return None
+
+
+def _ensure_db_table() -> bool:
+    """Create the dedup table if it does not exist. Idempotent and fail-open."""
+    global _db_table_ready
+    if _db_table_ready:
+        return True
+    conn = _get_db_connection()
+    if conn is None:
+        return False
+    try:
+        conn.execute(
+            f"CREATE TABLE IF NOT EXISTS {_DB_DEDUP_TABLE} ("
+            "  dedup_key   TEXT PRIMARY KEY,"
+            "  expires_at  REAL NOT NULL,"
+            "  created_at  REAL NOT NULL DEFAULT (strftime('%s','now'))"
+            ")"
+        )
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{_DB_DEDUP_TABLE}_expires "
+            f"ON {_DB_DEDUP_TABLE}(expires_at)"
+        )
+        conn.commit()
+        _db_table_ready = True
+        return True
+    except Exception:
+        logger.debug("notification_noise: DB table init failed, falling back to in-memory only")
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _db_dedup_exists(conn, dedup_key: str, now_ts: float) -> bool:
+    """Check if *dedup_key* exists in DB and is not yet expired."""
+    try:
+        row = conn.execute(
+            f"SELECT expires_at FROM {_DB_DEDUP_TABLE} WHERE dedup_key = ?",
+            (dedup_key,),
+        ).fetchone()
+        return row is not None and row[0] > now_ts
+    except Exception:
+        return False
+
+
+def _db_dedup_record(conn, dedup_key: str, expires_ts: float) -> None:
+    """Insert or update a dedup entry."""
+    try:
+        conn.execute(
+            f"INSERT OR REPLACE INTO {_DB_DEDUP_TABLE} (dedup_key, expires_at, created_at) "
+            "VALUES (?, ?, ?)",
+            (dedup_key, expires_ts, time.time()),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+
+def _db_cleanup_expired(conn, now_ts: float) -> None:
+    """Remove expired dedup rows from DB, rate-limited to avoid I/O storms."""
+    global _last_db_cleanup_at
+    if now_ts - _last_db_cleanup_at < _DB_CLEANUP_INTERVAL_SEC:
+        return
+    try:
+        conn.execute(f"DELETE FROM {_DB_DEDUP_TABLE} WHERE expires_at <= ?", (now_ts,))
+        conn.commit()
+        _last_db_cleanup_at = now_ts
+    except Exception:
+        pass
+
+
+def _check_db_dedup_and_cache(state_key: str, now_ts: float, ttl: int) -> bool:
+    """Check SQLite persistence layer for state_key, caching result in memory.
+
+    Returns True if the key is already present in the DB (should suppress).
+    On any error, returns False (fail-open: allow the notification).
+    Must NOT be called under _state_lock to avoid holding the lock during I/O.
+    """
+    conn = _get_db_connection()
+    if conn is None or not _ensure_db_table():
+        return False
+    try:
+        _db_cleanup_expired(conn, now_ts)
+        if _db_dedup_exists(conn, state_key, now_ts):
+            # Cache the DB hit in memory so we skip DB lookups in this process
+            with _state_lock:
+                _dedup_expires_at[state_key] = now_ts + ttl
+            return True
+        return False
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _record_db_dedup_and_cache(state_key: str, expires_ts: float) -> None:
+    """Record a dedup entry to both memory (hot cache) and SQLite (cross-process).
+
+    Fail-open: on any error, the in-memory state is already set by the caller.
+    """
+    conn = _get_db_connection()
+    if conn is None or not _ensure_db_table():
+        return
+    try:
+        _db_dedup_record(conn, state_key, expires_ts)
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def reset_notification_noise_state() -> None:
@@ -351,6 +501,22 @@ def _evaluate_notification_noise(
         if cooldown_reserved:
             _cooldown_inflight_until[cooldown_state_key] = (reservation_until, reservation_token)
 
+    # ---- cross-process DB dedup check (outside _state_lock to avoid deadlock) ----
+    _db_suppressed = False
+    if dedup_ttl > 0:
+        _db_suppressed = _check_db_dedup_and_cache(dedup_state_key, now_ts, dedup_ttl)
+    if not _db_suppressed and cooldown > 0:
+        _db_suppressed = _check_db_dedup_and_cache(cooldown_state_key, now_ts, cooldown)
+    if _db_suppressed:
+        return NotificationNoiseDecision(
+            should_send=False,
+            reason_code="dedup_db",
+            message="通知在跨进程去重记录中已存在，已跳过静态通知渠道。",
+            dedup_key=dedup_state_key,
+            cooldown_key=cooldown_state_key,
+            **decision_base,
+        )
+
     return NotificationNoiseDecision(
         should_send=True,
         dedup_key=dedup_state_key,
@@ -402,5 +568,10 @@ def record_notification_noise(decision: NotificationNoiseDecision, now: Optional
                 _dedup_expires_at[decision.dedup_key] = now_ts + decision.dedup_ttl_seconds
             if decision.cooldown_seconds > 0 and decision.cooldown_key:
                 _cooldown_expires_at[decision.cooldown_key] = now_ts + decision.cooldown_seconds
+        # Persist to SQLite for cross-process dedup (outside lock, fail-open)
+        if decision.dedup_ttl_seconds > 0 and decision.dedup_key:
+            _record_db_dedup_and_cache(decision.dedup_key, now_ts + decision.dedup_ttl_seconds)
+        if decision.cooldown_seconds > 0 and decision.cooldown_key:
+            _record_db_dedup_and_cache(decision.cooldown_key, now_ts + decision.cooldown_seconds)
     except Exception as exc:  # pragma: no cover - defensive branch.
         logger.warning("通知降噪状态记录失败，忽略该错误: %s", exc)

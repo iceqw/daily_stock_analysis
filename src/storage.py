@@ -362,6 +362,91 @@ class AnalysisHistory(Base):
         }
 
 
+class AIOpinionRecord(Base):
+    """Versioned AI opinion linked to one analysis history record."""
+
+    __tablename__ = 'ai_opinions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analysis_history_id = Column(
+        Integer,
+        ForeignKey('analysis_history.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+    )
+    version = Column(Integer, nullable=False, default=1)
+    is_current = Column(Boolean, nullable=False, default=False, index=True)
+    generation_status = Column(String(24), nullable=False, default='pending', index=True)
+    source_status = Column(String(24), nullable=False, default='available', index=True)
+    title = Column(String(200))
+    content = Column(Text)
+    conclusion = Column(Text)
+    output_json = Column(Text)
+    evidence_json = Column(Text)
+    risks_json = Column(Text)
+    limitations_json = Column(Text)
+    watch_items_json = Column(Text)
+    model = Column(String(128))
+    provider = Column(String(64))
+    temperature = Column(Float)
+    prompt_version = Column(String(64))
+    audit_metadata_json = Column(Text)
+    error_message = Column(Text)
+    context_hash = Column(String(64), index=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    feedback_value = Column(String(24), index=True)
+    feedback_note = Column(Text)
+    feedback_updated_at = Column(DateTime, index=True)
+    generated_at = Column(DateTime, index=True)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('analysis_history_id', 'version', name='uix_ai_opinion_analysis_version'),
+        Index('ix_ai_opinion_analysis_current', 'analysis_history_id', 'is_current', 'created_at'),
+    )
+
+
+class InvestmentJournalEntry(Base):
+    """Per-stock investment journal timeline entry."""
+
+    __tablename__ = 'investment_journal_entries'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_code = Column(String(16), nullable=False, index=True)
+    market = Column(String(8), nullable=False, index=True)
+    entry_type = Column(String(16), nullable=False, index=True)
+    source_analysis_history_id = Column(
+        Integer,
+        ForeignKey('analysis_history.id'),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    raw_content = Column(Text)
+    summary_snapshot = Column(Text)
+    risk_summary = Column(Text)
+    watch_items_json = Column(Text)
+    source_label = Column(String(64), nullable=False, default='manual')
+    source_status = Column(String(24), nullable=False, default='available', index=True)
+    structured_output_json = Column(Text)
+    ai_processing_status = Column(String(24), nullable=False, default='pending', index=True)
+    model = Column(String(128))
+    provider = Column(String(64))
+    temperature = Column(Float)
+    prompt_version = Column(String(64))
+    structured_version = Column(String(64))
+    structured_at = Column(DateTime, index=True)
+    structured_error = Column(Text)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+    __table_args__ = (
+        Index('ix_investment_journal_stock_market_time', 'stock_code', 'market', 'created_at'),
+        Index('ix_investment_journal_market_type_time', 'market', 'entry_type', 'created_at'),
+    )
+
+
 class BacktestResult(Base):
     """单条分析记录的回测结果。"""
 
@@ -1184,6 +1269,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_intelligence_item_scope_values()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
+            self._ensure_investment_journal_source_status_column()
+            self._ensure_investment_journal_phase22_schema()
+            self._ensure_ai_opinion_phase2_schema()
+            self._ensure_ai_opinion_current_unique_index()
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")
@@ -1407,6 +1496,294 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         except Exception as exc:
             logger.warning("资讯池 scope_value 回填失败，已跳过: %s", exc)
 
+    def _ensure_investment_journal_source_status_column(self) -> None:
+        """Backfill source_status for existing investment_journal_entries tables."""
+        if not self._is_sqlite_engine:
+            return
+        if not inspect(self._engine).has_table(InvestmentJournalEntry.__tablename__):
+            return
+        try:
+            existing = {
+                column["name"]
+                for column in inspect(self._engine).get_columns(InvestmentJournalEntry.__tablename__)
+            }
+        except Exception as exc:
+            logger.warning(
+                "[Investment journal] failed to inspect columns; skipping source_status backfill: %s",
+                exc,
+            )
+            return
+        if "source_status" not in existing:
+            with self._engine.begin() as connection:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {InvestmentJournalEntry.__tablename__} "
+                    "ADD COLUMN source_status VARCHAR(24) NOT NULL DEFAULT 'available'"
+                )
+        with self._engine.begin() as connection:
+            connection.exec_driver_sql(
+                f"UPDATE {InvestmentJournalEntry.__tablename__} "
+                "SET source_status = CASE "
+                "WHEN source_analysis_history_id IS NULL AND entry_type = 'analysis' THEN 'deleted' "
+                "WHEN source_status IS NULL OR source_status = '' THEN 'available' "
+                "ELSE source_status END"
+            )
+
+    def _ensure_investment_journal_phase22_schema(self) -> None:
+        """Backfill Journal AI structuring metadata columns for existing SQLite tables."""
+        if not self._is_sqlite_engine:
+            return
+        if not inspect(self._engine).has_table(InvestmentJournalEntry.__tablename__):
+            return
+        try:
+            existing = {
+                column["name"]
+                for column in inspect(self._engine).get_columns(InvestmentJournalEntry.__tablename__)
+            }
+        except Exception as exc:
+            logger.warning(
+                "[Investment journal] failed to inspect phase2.2 columns; skipping migration: %s",
+                exc,
+            )
+            return
+
+        additions = {
+            "provider": "ALTER TABLE investment_journal_entries ADD COLUMN provider VARCHAR(64)",
+            "temperature": "ALTER TABLE investment_journal_entries ADD COLUMN temperature FLOAT",
+            "structured_version": "ALTER TABLE investment_journal_entries ADD COLUMN structured_version VARCHAR(64)",
+            "structured_at": "ALTER TABLE investment_journal_entries ADD COLUMN structured_at DATETIME",
+            "structured_error": "ALTER TABLE investment_journal_entries ADD COLUMN structured_error TEXT",
+        }
+        with self._engine.begin() as connection:
+            for column_name, ddl in additions.items():
+                if column_name not in existing:
+                    connection.exec_driver_sql(ddl)
+            connection.exec_driver_sql(
+                """
+                UPDATE investment_journal_entries
+                SET ai_processing_status = CASE
+                    WHEN LOWER(COALESCE(ai_processing_status, '')) = 'succeeded' THEN 'completed'
+                    WHEN ai_processing_status IS NULL OR ai_processing_status = '' THEN 'pending'
+                    ELSE ai_processing_status
+                END
+                """
+            )
+
+    def _ensure_ai_opinion_current_unique_index(self) -> None:
+        """Ensure at most one current AI opinion per analysis_history in SQLite."""
+        if not self._is_sqlite_engine:
+            return
+        if not inspect(self._engine).has_table(AIOpinionRecord.__tablename__):
+            return
+        with self._engine.begin() as connection:
+            try:
+                connection.exec_driver_sql(
+                    "DROP INDEX IF EXISTS uix_ai_opinion_current_per_analysis"
+                )
+            except Exception:
+                pass
+            duplicate_history_ids = [
+                int(row[0])
+                for row in connection.exec_driver_sql(
+                    """
+                    SELECT analysis_history_id
+                    FROM ai_opinions
+                    WHERE analysis_history_id IS NOT NULL AND is_current = 1
+                    GROUP BY analysis_history_id
+                    HAVING COUNT(*) > 1
+                    """
+                ).fetchall()
+            ]
+            for history_id in duplicate_history_ids:
+                current_rows = connection.exec_driver_sql(
+                    """
+                    SELECT id
+                    FROM ai_opinions
+                    WHERE analysis_history_id = ? AND is_current = 1
+                    ORDER BY version DESC, id DESC
+                    """,
+                    (history_id,),
+                ).fetchall()
+                for stale_row in current_rows[1:]:
+                    connection.exec_driver_sql(
+                        "UPDATE ai_opinions SET is_current = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (int(stale_row[0]),),
+                    )
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uix_ai_opinion_current_per_analysis "
+                "ON ai_opinions (analysis_history_id) "
+                "WHERE analysis_history_id IS NOT NULL AND is_current = 1"
+            )
+
+    def _ensure_ai_opinion_phase2_schema(self) -> None:
+        """Upgrade ai_opinions for phase-2 generation/runtime fields in SQLite."""
+        if not self._is_sqlite_engine:
+            return
+        if not inspect(self._engine).has_table(AIOpinionRecord.__tablename__):
+            return
+        try:
+            columns = inspect(self._engine).get_columns(AIOpinionRecord.__tablename__)
+        except Exception as exc:
+            logger.warning(
+                "[AI opinion] failed to inspect columns; skipping phase2 schema upgrade: %s",
+                exc,
+            )
+            return
+
+        existing = {column["name"]: column for column in columns}
+        required_columns = {
+            "source_status",
+            "output_json",
+            "provider",
+            "temperature",
+            "error_message",
+            "context_hash",
+            "retry_count",
+            "generated_at",
+        }
+        needs_rebuild = (
+            "analysis_history_id" in existing and not bool(existing["analysis_history_id"].get("nullable", False))
+        ) or not required_columns.issubset(existing.keys())
+        if not needs_rebuild:
+            with self._engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "UPDATE ai_opinions SET source_status = COALESCE(NULLIF(source_status, ''), 'available')"
+                )
+                connection.exec_driver_sql(
+                    "UPDATE ai_opinions SET retry_count = COALESCE(retry_count, 0)"
+                )
+            return
+
+        logger.info("Rebuilding ai_opinions table for phase-2 schema compatibility.")
+        legacy_column_expr = lambda name, default_sql="NULL": name if name in existing else default_sql
+        with self._engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS ai_opinions__phase2_new")
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE ai_opinions__phase2_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis_history_id INTEGER NULL REFERENCES analysis_history(id) ON DELETE SET NULL,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    is_current BOOLEAN NOT NULL DEFAULT 0,
+                    generation_status VARCHAR(24) NOT NULL DEFAULT 'pending',
+                    source_status VARCHAR(24) NOT NULL DEFAULT 'available',
+                    title VARCHAR(200),
+                    content TEXT,
+                    conclusion TEXT,
+                    output_json TEXT,
+                    evidence_json TEXT,
+                    risks_json TEXT,
+                    limitations_json TEXT,
+                    watch_items_json TEXT,
+                    model VARCHAR(128),
+                    provider VARCHAR(64),
+                    temperature FLOAT,
+                    prompt_version VARCHAR(64),
+                    audit_metadata_json TEXT,
+                    error_message TEXT,
+                    context_hash VARCHAR(64),
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    feedback_value VARCHAR(24),
+                    feedback_note TEXT,
+                    feedback_updated_at DATETIME,
+                    generated_at DATETIME,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    CONSTRAINT uix_ai_opinion_analysis_version UNIQUE (analysis_history_id, version)
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                f"""
+                INSERT INTO ai_opinions__phase2_new (
+                    id,
+                    analysis_history_id,
+                    version,
+                    is_current,
+                    generation_status,
+                    source_status,
+                    title,
+                    content,
+                    conclusion,
+                    output_json,
+                    evidence_json,
+                    risks_json,
+                    limitations_json,
+                    watch_items_json,
+                    model,
+                    provider,
+                    temperature,
+                    prompt_version,
+                    audit_metadata_json,
+                    error_message,
+                    context_hash,
+                    retry_count,
+                    feedback_value,
+                    feedback_note,
+                    feedback_updated_at,
+                    generated_at,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    {legacy_column_expr("id")},
+                    {legacy_column_expr("analysis_history_id")},
+                    {legacy_column_expr("version", "1")},
+                    COALESCE({legacy_column_expr("is_current", "0")}, 0),
+                    CASE
+                        WHEN LOWER(COALESCE({legacy_column_expr("generation_status", "'pending'")}, '')) = 'succeeded' THEN 'completed'
+                        WHEN LOWER(COALESCE({legacy_column_expr("generation_status", "'pending'")}, '')) = 'processing' THEN 'generating'
+                        WHEN LOWER(COALESCE({legacy_column_expr("generation_status", "'pending'")}, '')) = 'archived' THEN 'completed'
+                        WHEN LOWER(COALESCE({legacy_column_expr("generation_status", "'pending'")}, '')) IN ('pending', 'failed') THEN LOWER({legacy_column_expr("generation_status", "'pending'")})
+                        ELSE 'pending'
+                    END,
+                    'available',
+                    {legacy_column_expr("title")},
+                    {legacy_column_expr("content")},
+                    {legacy_column_expr("conclusion")},
+                    NULL,
+                    {legacy_column_expr("evidence_json")},
+                    {legacy_column_expr("risks_json")},
+                    {legacy_column_expr("limitations_json")},
+                    {legacy_column_expr("watch_items_json")},
+                    {legacy_column_expr("model")},
+                    NULL,
+                    NULL,
+                    {legacy_column_expr("prompt_version")},
+                    {legacy_column_expr("audit_metadata_json")},
+                    NULL,
+                    NULL,
+                    0,
+                    {legacy_column_expr("feedback_value")},
+                    {legacy_column_expr("feedback_note")},
+                    {legacy_column_expr("feedback_updated_at")},
+                    CASE
+                        WHEN LOWER(COALESCE({legacy_column_expr("generation_status", "'pending'")}, '')) IN ('succeeded', 'archived') THEN {legacy_column_expr("created_at")}
+                        ELSE NULL
+                    END,
+                    {legacy_column_expr("created_at")},
+                    {legacy_column_expr("updated_at")}
+                FROM ai_opinions
+                """
+            )
+            connection.exec_driver_sql("DROP TABLE ai_opinions")
+            connection.exec_driver_sql("ALTER TABLE ai_opinions__phase2_new RENAME TO ai_opinions")
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_ai_opinion_analysis_current "
+                "ON ai_opinions (analysis_history_id, is_current, created_at)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_ai_opinion_generation_status "
+                "ON ai_opinions (generation_status)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_ai_opinion_source_status "
+                "ON ai_opinions (source_status)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_ai_opinion_context_hash "
+                "ON ai_opinions (context_hash)"
+            )
+
     @classmethod
     def get_instance(cls) -> 'DatabaseManager':
         """获取单例实例"""
@@ -1451,6 +1828,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
             cursor = dbapi_connection.cursor()
             try:
+                cursor.execute("PRAGMA foreign_keys=ON")
                 cursor.execute(f"PRAGMA busy_timeout={int(self._sqlite_busy_timeout_ms)}")
                 if self._sqlite_file_db and self._sqlite_wal_enabled:
                     cursor.execute("PRAGMA journal_mode=WAL")
@@ -2224,6 +2602,26 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 session.execute(
                     delete(DecisionSignalRecord).where(DecisionSignalRecord.id.in_(linked_signal_ids))
                 )
+            now_value = utc_naive_now()
+            linked_ai_opinions = session.execute(
+                select(AIOpinionRecord).where(
+                    AIOpinionRecord.analysis_history_id.in_(existing_ids)
+                )
+            ).scalars().all()
+            for opinion in linked_ai_opinions:
+                opinion.analysis_history_id = None
+                opinion.source_status = "deleted"
+                opinion.updated_at = now_value
+            linked_journal_entries = session.execute(
+                select(InvestmentJournalEntry).where(
+                    InvestmentJournalEntry.source_analysis_history_id.in_(existing_ids)
+                )
+            ).scalars().all()
+            for entry in linked_journal_entries:
+                entry.source_analysis_history_id = None
+                entry.source_status = "deleted"
+                entry.updated_at = now_value
+            session.flush()
             session.execute(
                 delete(BacktestResult).where(BacktestResult.analysis_history_id.in_(existing_ids))
             )
