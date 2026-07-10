@@ -821,6 +821,11 @@ class StockAnalysisPipeline:
                             context_snapshot=context_snapshot,
                             portfolio_context=portfolio_context,
                         )
+                        self._sync_investment_journal_after_history_save(
+                            query_id=query_id,
+                            source_report_id=saved_history_id,
+                            stock_code=getattr(result, "code", None),
+                        )
                 except Exception as e:
                     record_history_run(
                         report_saved=False,
@@ -1484,6 +1489,11 @@ class StockAnalysisPipeline:
                             report_type=report_type.value,
                             context_snapshot=agent_context_snapshot,
                             portfolio_context=portfolio_context,
+                        )
+                        self._sync_investment_journal_after_history_save(
+                            query_id=query_id,
+                            source_report_id=saved_history_id,
+                            stock_code=getattr(result, "code", None),
                         )
                     latest_diagnostic_snapshot = current_diagnostic_snapshot()
                     if latest_diagnostic_snapshot is not None:
@@ -2404,6 +2414,33 @@ class StockAnalysisPipeline:
                 exc_info=True,
             )
 
+    def _sync_investment_journal_after_history_save(
+        self,
+        *,
+        query_id: str,
+        source_report_id: int,
+        stock_code: Optional[str],
+    ) -> None:
+        """Best-effort analysis->investment-journal sync after history save."""
+
+        try:
+            from src.services.investment_journal_service import (
+                InvestmentJournalService,
+                InvestmentJournalUnsupportedHistoryError,
+            )
+
+            InvestmentJournalService(db_manager=self.db).sync_analysis_entry(source_report_id)
+        except InvestmentJournalUnsupportedHistoryError:
+            return
+        except Exception as exc:
+            logger.warning(
+                "Investment journal sync skipped after history save: query_id=%s stock_code=%s error=%s",
+                query_id,
+                stock_code,
+                exc,
+                exc_info=True,
+            )
+
     @staticmethod
     def _build_notification_run_snapshot(
         *,
@@ -3137,535 +3174,113 @@ class StockAnalysisPipeline:
         report_type: ReportType = ReportType.SIMPLE,
         skip_push: bool = False,
     ) -> None:
-        """
-        发送分析结果通知
-        
-        生成决策仪表盘格式的报告
-        
-        Args:
-            results: 分析结果列表
-            skip_push: 是否跳过推送（仅保存到本地，用于单股推送模式）
-        """
-        noise_decision = None
-        noise_finalized = False
+        """发送分析结果通知 — 生成决策仪表盘并通过统一渠道分发。"""
         try:
             logger.info("生成决策仪表盘日报...")
             report = self._generate_aggregate_report(results, report_type)
-            
+
             # 跳过推送（单股推送模式 / 合并模式：报告已由 _save_local_report 保存）
             if skip_push:
                 notification_run = self._build_notification_run_snapshot(
-                    channel="report",
-                    status="skipped",
-                    success=False,
-                    attempts=0,
+                    channel="report", status="skipped", success=False, attempts=0,
                 )
-                record_notification_run(
-                    channel="report",
-                    status="skipped",
-                    success=False,
-                    attempts=0,
-                )
-                self._refresh_saved_diagnostic_snapshot(
-                    results=results,
-                    notification_run=notification_run,
-                )
+                record_notification_run(channel="report", status="skipped", success=False, attempts=0)
+                self._refresh_saved_diagnostic_snapshot(results=results, notification_run=notification_run)
                 return
-            
-            # 推送通知
-            if self.notifier.is_available():
-                channels = self.notifier.get_available_channels()
-                channels = self.notifier.get_channels_for_route("report", channels=channels)
 
-                def _send_channel_safely(
-                    channel_label: str,
-                    send_func: Callable[[], bool],
-                ) -> tuple[bool, Optional[Exception]]:
-                    try:
-                        return bool(send_func()), None
-                    except Exception as e:
-                        logger.exception(
-                            "通知渠道 %s 推送异常，继续尝试其他渠道: %s",
-                            channel_label,
-                            e,
-                        )
-                        return False, e
-
-                def _record_channel_result(
-                    channel_label: str,
-                    success: bool,
-                    error_message: Optional[Exception] = None,
-                    target_results: Optional[List[AnalysisResult]] = None,
-                ) -> None:
-                    notification_run = self._build_notification_run_snapshot(
-                        channel=channel_label,
-                        status="success" if success else "failed",
-                        success=success,
-                        error_message=error_message,
-                    )
-                    record_notification_run(
-                        channel=channel_label,
-                        status="success" if success else "failed",
-                        success=success,
-                        error_message=error_message,
-                    )
-                    self._refresh_saved_diagnostic_snapshot(
-                        results=results if target_results is None else target_results,
-                        notification_run=notification_run,
-                    )
-
-                send_context = self.notifier.send_to_context(report)
-                if send_context:
-                    _record_channel_result("__context__", True)
-
-                should_broadcast_static = True
-                should_broadcast_static_func = getattr(
-                    self.notifier,
-                    "should_broadcast_static_channels",
-                    None,
+            if not self.notifier.is_available():
+                notification_run = self._build_notification_run_snapshot(
+                    channel="report", status="not_configured", success=False, attempts=0,
                 )
-                if callable(should_broadcast_static_func):
-                    should_broadcast_static = bool(should_broadcast_static_func())
-                if not should_broadcast_static:
-                    if not send_context:
-                        _record_channel_result("__context__", False)
-                    if send_context:
-                        logger.info("决策仪表盘推送成功")
-                    else:
-                        logger.warning("决策仪表盘推送失败")
-                    logger.info("交互式消息上下文回复模式：已跳过静态通知渠道")
-                    return
+                record_notification_run(channel="report", status="not_configured", success=False, attempts=0)
+                self._refresh_saved_diagnostic_snapshot(results=results, notification_run=notification_run)
+                logger.info("通知渠道未配置，跳过推送")
+                return
 
-                if channels and hasattr(self.notifier, "evaluate_noise_control"):
-                    report_type_key = report_type.value if isinstance(report_type, ReportType) else str(report_type)
-                    codes_key = ",".join(
-                        sorted(str(getattr(result, "code", "") or "") for result in results)
-                    )
-                    noise_key = f"report:aggregate:{report_type_key}:{codes_key}"
-                    noise_decision = self.notifier.evaluate_noise_control(
-                        report,
+            # ---- 企业微信：生成精简版格式（平台限制） ----
+            channel_overrides: Dict[NotificationChannel, str] = {}
+            if NotificationChannel.WECHAT in self.notifier.get_available_channels():
+                wechat_content = (
+                    self.notifier.generate_brief_report(results)
+                    if report_type == ReportType.BRIEF
+                    else self.notifier.generate_wechat_dashboard(results)
+                )
+                channel_overrides[NotificationChannel.WECHAT] = wechat_content
+                logger.info("企业微信仪表盘长度: %d 字符", len(wechat_content))
+
+            # ---- 统一分发（含噪声控制、Markdown 转图片、渠道路由） ----
+            report_type_key = report_type.value if isinstance(report_type, ReportType) else str(report_type)
+            codes_key = ",".join(sorted(str(getattr(r, "code", "") or "") for r in results))
+            noise_key = f"report:aggregate:{report_type_key}:{codes_key}"
+
+            dispatch_result = self.notifier.send_with_results(
+                report,
+                route_type="report",
+                severity="info",
+                dedup_key=noise_key,
+                cooldown_key=noise_key,
+                channel_content_overrides=channel_overrides if channel_overrides else None,
+            )
+
+            # ---- 股票分组邮件（Issue #268） ----
+            stock_email_groups = getattr(self.config, "stock_email_groups", []) or []
+            email_grouped = False
+            if stock_email_groups and NotificationChannel.EMAIL in self.notifier.get_available_channels():
+                code_to_emails: Dict[str, Optional[List[str]]] = {}
+                for r in results:
+                    if r.code not in code_to_emails:
+                        canonical = normalize_stock_code(r.code)
+                        emails: List[str] = []
+                        for stocks, emails_list in stock_email_groups:
+                            if canonical in stocks:
+                                emails.extend(emails_list)
+                        code_to_emails[r.code] = list(dict.fromkeys(emails)) if emails else None
+                emails_to_results: Dict[Optional[Tuple], List] = defaultdict(list)
+                for r in results:
+                    recs = code_to_emails.get(r.code)
+                    emails_to_results[tuple(recs) if recs else None].append(r)
+                for key, group_results in emails_to_results.items():
+                    receivers = list(key) if key is not None else None
+                    grp_report = self._generate_aggregate_report(group_results, report_type)
+                    self.notifier.send_with_results(
+                        grp_report,
+                        email_stock_codes=[r.code for r in group_results],
+                        email_send_to_all=(receivers is None),
                         route_type="report",
                         severity="info",
-                        dedup_key=noise_key,
-                        cooldown_key=noise_key,
+                        dedup_key=f"{noise_key}:email_group:{hash(tuple(sorted(r.code for r in group_results)))}",
+                        cooldown_key=f"{noise_key}:email_group",
                     )
-                    if not noise_decision.should_send:
-                        notification_run = self._build_notification_run_snapshot(
-                            channel="report",
-                            status="skipped",
-                            success=False,
-                            attempts=0,
-                        )
-                        record_notification_run(
-                            channel="report",
-                            status="skipped",
-                            success=False,
-                            attempts=0,
-                        )
-                        self._refresh_saved_diagnostic_snapshot(
-                            results=results,
-                            notification_run=notification_run,
-                        )
-                        logger.info(noise_decision.message)
-                        return
+                email_grouped = True
 
-                # Issue #455: Markdown 转图片（与 notification.send 逻辑一致）
-                from src.md2img import markdown_to_image
-
-                channels_needing_image = {
-                    ch for ch in channels
-                    if ch.value in self.notifier._markdown_to_image_channels
-                    and ch not in {NotificationChannel.NTFY, NotificationChannel.GOTIFY}
-                }
-                non_wechat_channels_needing_image = {
-                    ch for ch in channels_needing_image if ch != NotificationChannel.WECHAT
-                }
-
-                def _get_md2img_hint() -> str:
-                    try:
-                        engine = getattr(get_config(), "md2img_engine", "wkhtmltoimage")
-                    except Exception:
-                        engine = "wkhtmltoimage"
-                    return (
-                        "npm i -g markdown-to-file" if engine == "markdown-to-file"
-                        else "wkhtmltopdf (apt install wkhtmltopdf / brew install wkhtmltopdf)"
-                    )
-
-                image_bytes = None
-                if non_wechat_channels_needing_image:
-                    image_bytes = markdown_to_image(
-                        report, max_chars=self.notifier._markdown_to_image_max_chars
-                    )
-                    if image_bytes:
-                        logger.info(
-                            "Markdown 已转换为图片，将向 %s 发送图片",
-                            [ch.value for ch in non_wechat_channels_needing_image],
-                        )
-                    else:
-                        logger.warning(
-                            "Markdown 转图片失败，将回退为文本发送。请检查 MARKDOWN_TO_IMAGE_CHANNELS 配置并安装 %s",
-                            _get_md2img_hint(),
-                        )
-
-                # 企业微信：只发精简版（平台限制）
-                wechat_success = False
-                if NotificationChannel.WECHAT in channels:
-                    def _send_wechat_report() -> bool:
-                        if report_type == ReportType.BRIEF:
-                            dashboard_content = self.notifier.generate_brief_report(results)
-                        else:
-                            dashboard_content = self.notifier.generate_wechat_dashboard(results)
-                        logger.info(f"企业微信仪表盘长度: {len(dashboard_content)} 字符")
-                        logger.debug(f"企业微信推送内容:\n{dashboard_content}")
-                        wechat_image_bytes = None
-                        if NotificationChannel.WECHAT in channels_needing_image:
-                            wechat_image_bytes = markdown_to_image(
-                                dashboard_content,
-                                max_chars=self.notifier._markdown_to_image_max_chars,
-                            )
-                            if wechat_image_bytes is None:
-                                logger.warning(
-                                    "企业微信 Markdown 转图片失败，将回退为文本发送。请检查 MARKDOWN_TO_IMAGE_CHANNELS 配置并安装 %s",
-                                    _get_md2img_hint(),
-                                )
-                        use_image = self.notifier._should_use_image_for_channel(
-                            NotificationChannel.WECHAT, wechat_image_bytes
-                        )
-                        if use_image:
-                            return self.notifier._send_wechat_image(wechat_image_bytes)
-                        return self.notifier.send_to_wechat(dashboard_content)
-
-                    wechat_success, wechat_error = _send_channel_safely(
-                        NotificationChannel.WECHAT.value,
-                        _send_wechat_report,
-                    )
-                    _record_channel_result(
-                        NotificationChannel.WECHAT.value,
-                        wechat_success,
-                        wechat_error,
-                    )
-
-                # 其他渠道：发完整报告（避免自定义 Webhook 被 wechat 截断逻辑污染）
-                non_wechat_success = False
-                stock_email_groups = getattr(self.config, 'stock_email_groups', []) or []
-                for channel in channels:
-                    if channel == NotificationChannel.WECHAT:
-                        continue
-                    if channel == NotificationChannel.FEISHU:
-                        def _send_feishu_report() -> bool:
-                            if getattr(self.notifier, "_feishu_send_as_file", False):
-                                date_str = datetime.now().strftime('%Y%m%d')
-                                filepath = self.notifier.save_report_to_file(
-                                    report, filename=f"dashboard_{date_str}.md"
-                                )
-                                return self.notifier.send_feishu_file(filepath)
-                            return self.notifier.send_to_feishu(report)
-
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            _send_feishu_report,
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.TELEGRAM:
-                        def _send_telegram_report() -> bool:
-                            use_image = self.notifier._should_use_image_for_channel(
-                                channel, image_bytes
-                            )
-                            if use_image:
-                                return self.notifier._send_telegram_photo(image_bytes)
-                            return self.notifier.send_to_telegram(report)
-
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            _send_telegram_report,
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.EMAIL:
-                        if stock_email_groups:
-                            code_to_emails: Dict[str, Optional[List[str]]] = {}
-                            for r in results:
-                                if r.code not in code_to_emails:
-                                    canonical = normalize_stock_code(r.code)
-                                    emails = []
-                                    for stocks, emails_list in stock_email_groups:
-                                        if canonical in stocks:
-                                            emails.extend(emails_list)
-                                    code_to_emails[r.code] = list(dict.fromkeys(emails)) if emails else None
-                            emails_to_results: Dict[Optional[Tuple], List] = defaultdict(list)
-                            for r in results:
-                                recs = code_to_emails.get(r.code)
-                                key = tuple(recs) if recs else None
-                                emails_to_results[key].append(r)
-                            for key, group_results in emails_to_results.items():
-                                receivers = list(key) if key is not None else None
-
-                                def _send_email_group(
-                                    group_results=group_results,
-                                    receivers=receivers,
-                                ) -> bool:
-                                    grp_report = self._generate_aggregate_report(group_results, report_type)
-                                    grp_image_bytes = None
-                                    if channel.value in self.notifier._markdown_to_image_channels:
-                                        grp_image_bytes = markdown_to_image(
-                                            grp_report,
-                                            max_chars=self.notifier._markdown_to_image_max_chars,
-                                        )
-                                    use_image = self.notifier._should_use_image_for_channel(
-                                        channel, grp_image_bytes
-                                    )
-                                    if use_image:
-                                        return self.notifier._send_email_with_inline_image(
-                                            grp_image_bytes, receivers=receivers
-                                        )
-                                    return self.notifier.send_to_email(
-                                        grp_report, receivers=receivers
-                                    )
-
-                                email_label = (
-                                    f"{channel.value}:{','.join(receivers)}"
-                                    if receivers else f"{channel.value}:default"
-                                )
-                                channel_success, channel_error = _send_channel_safely(
-                                    email_label,
-                                    _send_email_group,
-                                )
-                                non_wechat_success = channel_success or non_wechat_success
-                                _record_channel_result(
-                                    email_label,
-                                    channel_success,
-                                    channel_error,
-                                    target_results=group_results,
-                                )
-                        else:
-                            def _send_email_report() -> bool:
-                                use_image = self.notifier._should_use_image_for_channel(
-                                    channel, image_bytes
-                                )
-                                if use_image:
-                                    return self.notifier._send_email_with_inline_image(image_bytes)
-                                return self.notifier.send_to_email(report)
-
-                            channel_success, channel_error = _send_channel_safely(
-                                channel.value,
-                                _send_email_report,
-                            )
-                            non_wechat_success = channel_success or non_wechat_success
-                            _record_channel_result(
-                                channel.value,
-                                channel_success,
-                                channel_error,
-                            )
-                    elif channel == NotificationChannel.CUSTOM:
-                        def _send_custom_report() -> bool:
-                            use_image = self.notifier._should_use_image_for_channel(
-                                channel, image_bytes
-                            )
-                            if use_image:
-                                return self.notifier._send_custom_webhook_image(
-                                    image_bytes, fallback_content=report
-                                )
-                            return self.notifier.send_to_custom(report)
-
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            _send_custom_report,
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.PUSHPLUS:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_pushplus(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.SERVERCHAN3:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_serverchan3(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.DISCORD:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_discord(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.PUSHOVER:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_pushover(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.NTFY:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_ntfy(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.GOTIFY:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_gotify(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.ASTRBOT:
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            lambda: self.notifier.send_to_astrbot(report),
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    elif channel == NotificationChannel.SLACK:
-                        def _send_slack_report() -> bool:
-                            use_image = self.notifier._should_use_image_for_channel(
-                                channel, image_bytes
-                            )
-                            if use_image and self.notifier._slack_bot_token and self.notifier._slack_channel_id:
-                                return self.notifier._send_slack_image(
-                                    image_bytes, fallback_content=report
-                                )
-                            return self.notifier.send_to_slack(report)
-
-                        channel_success, channel_error = _send_channel_safely(
-                            channel.value,
-                            _send_slack_report,
-                        )
-                        non_wechat_success = channel_success or non_wechat_success
-                        _record_channel_result(
-                            channel.value,
-                            channel_success,
-                            channel_error,
-                        )
-                    else:
-                        logger.warning(f"未知通知渠道: {channel}")
-
-                has_targeted_channels = bool(channels)
-                success = wechat_success or non_wechat_success or send_context
-                if (
-                    (wechat_success or non_wechat_success)
-                    and noise_decision is not None
-                    and hasattr(self.notifier, "record_noise_control")
-                ):
-                    self.notifier.record_noise_control(noise_decision)
-                    noise_finalized = True
-                elif (
-                    noise_decision is not None
-                    and hasattr(self.notifier, "release_noise_control")
-                ):
-                    self.notifier.release_noise_control(noise_decision)
-                    noise_finalized = True
-                if success:
-                    logger.info("决策仪表盘推送成功")
-                else:
-                    logger.warning("决策仪表盘推送失败")
-                if not has_targeted_channels and not send_context:
-                    channel_label = ",".join(channel.value for channel in channels) or "report"
-                    notification_run = self._build_notification_run_snapshot(
-                        channel=channel_label,
-                        status="success" if success else "failed",
-                        success=success,
-                    )
-                    record_notification_run(
-                        channel=channel_label,
-                        status="success" if success else "failed",
-                        success=success,
-                    )
-                    self._refresh_saved_diagnostic_snapshot(
-                        results=results,
-                        notification_run=notification_run,
-                    )
-            else:
-                notification_run = self._build_notification_run_snapshot(
-                    channel="report",
-                    status="not_configured",
-                    success=False,
-                    attempts=0,
-                )
-                record_notification_run(
-                    channel="report",
-                    status="not_configured",
-                    success=False,
-                    attempts=0,
-                )
-                self._refresh_saved_diagnostic_snapshot(
-                    results=results,
-                    notification_run=notification_run,
-                )
-                logger.info("通知渠道未配置，跳过推送")
-                
-        except Exception as e:
+            # ---- 记录诊断快照 ----
+            status = "success" if dispatch_result.success else "failed"
             notification_run = self._build_notification_run_snapshot(
                 channel="report",
-                status="failed",
-                success=False,
-                error_message=e,
+                status=status,
+                success=dispatch_result.success,
+                attempts=len(dispatch_result.channel_results) if dispatch_result.channel_results else 0,
             )
-            record_notification_run(
-                channel="report",
-                status="failed",
-                success=False,
-                error_message=e,
+            record_notification_run(channel="report", status=status, success=dispatch_result.success)
+            self._refresh_saved_diagnostic_snapshot(results=results, notification_run=notification_run)
+
+            if email_grouped:
+                logger.info("股票分组邮件已额外发送")
+            if dispatch_result.success:
+                logger.info("决策仪表盘推送成功")
+            elif dispatch_result.status == "noise_suppressed":
+                logger.info(dispatch_result.message or "通知已在去重/冷却窗口内，跳过推送")
+            else:
+                logger.warning("决策仪表盘推送失败: %s", dispatch_result.message or "")
+
+        except Exception as e:
+            notification_run = self._build_notification_run_snapshot(
+                channel="report", status="failed", success=False, error_message=e,
             )
-            self._refresh_saved_diagnostic_snapshot(
-                results=results,
-                notification_run=notification_run,
-            )
-            if (
-                noise_decision is not None
-                and not noise_finalized
-                and hasattr(self.notifier, "release_noise_control")
-            ):
-                self.notifier.release_noise_control(noise_decision)
+            record_notification_run(channel="report", status="failed", success=False, error_message=e)
+            self._refresh_saved_diagnostic_snapshot(results=results, notification_run=notification_run)
             import traceback
-            logger.error(f"发送通知失败: {e}\n{traceback.format_exc()}")
+            logger.error("发送通知失败: %s\n%s", e, traceback.format_exc())
 
     def _generate_aggregate_report(
         self,
