@@ -2396,12 +2396,16 @@ class NotificationService(
         email_stock_codes: Optional[List[str]],
         email_send_to_all: bool,
         route_type: Optional[str] = None,
+        channel_content_overrides: Optional[Dict[NotificationChannel, str]] = None,
     ) -> bool:
+        # Apply per-channel content override if provided
+        override = (channel_content_overrides or {}).get(channel)
+        effective_content = override if override else content
         use_image = self._should_use_image_for_channel(channel, image_bytes)
         if channel == NotificationChannel.WECHAT:
             if use_image:
                 return self._send_wechat_image(image_bytes)
-            return self.send_to_wechat(content)
+            return self.send_to_wechat(effective_content)
         if channel == NotificationChannel.FEISHU:
             if getattr(self, "_feishu_send_as_file", False) and route_type == "report":
                 date_str = datetime.now().strftime('%Y%m%d')
@@ -2459,6 +2463,7 @@ class NotificationService(
         severity: Optional[str] = None,
         dedup_key: Optional[str] = None,
         cooldown_key: Optional[str] = None,
+        channel_content_overrides: Optional[Dict[NotificationChannel, str]] = None,
     ) -> NotificationDispatchResult:
         """
         Send a notification and return per-channel diagnostics.
@@ -2479,6 +2484,7 @@ class NotificationService(
             severity: 通知严重级别；未设置时按路由类型推断
             dedup_key: 可选稳定去重 key；未设置时使用内容 hash
             cooldown_key: 可选冷却 key；未设置时使用路由/级别默认 key
+            channel_content_overrides: 可选渠道内容覆盖（用于 Pipeline 等需要渠道特定格式的场景）
 
         Returns:
             Structured dispatch diagnostics.
@@ -2612,6 +2618,7 @@ class NotificationService(
                     email_stock_codes=email_stock_codes,
                     email_send_to_all=email_send_to_all,
                     route_type=route_type,
+                    channel_content_overrides=channel_content_overrides,
                 )
                 latency_ms = int((time.monotonic() - started_at) * 1000)
 

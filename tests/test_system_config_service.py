@@ -3060,12 +3060,12 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             protocol="openai",
             base_url="https://api.deepseek.com/v1",
             api_key="sk-test-value",
-            models=["deepseek-chat"],
+            models=["deepseek-v4-flash"],
         )
 
         self.assertTrue(payload["success"])
         self.assertEqual(payload["resolved_protocol"], "openai")
-        self.assertEqual(payload["resolved_model"], "openai/deepseek-chat")
+        self.assertEqual(payload["resolved_model"], "openai/deepseek-v4-flash")
         self.assertEqual(payload["capability_results"], {})
         self.assertEqual(mock_completion.call_count, 1)
 
@@ -3096,11 +3096,11 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             protocol="openai",
             base_url="https://api.deepseek.com/v1",
             api_key="sk-test-value",
-            models=["deepseek-chat"],
+            models=["deepseek-v4-flash"],
         )
 
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["resolved_model"], "openai/deepseek-chat")
+        self.assertEqual(payload["resolved_model"], "openai/deepseek-v4-flash")
 
     @patch("litellm.completion")
     def test_test_llm_channel_allows_ollama_prefix_without_explicit_protocol(self, mock_completion) -> None:
@@ -3170,12 +3170,12 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             "LLM_DEEPSEEK_PROTOCOL=deepseek",
             "LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY=sk-test-value",
-            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-flash",
-            "LITELLM_MODEL=deepseek/deepseek-chat",
+            "LLM_DEEPSEEK_MODELS=deepseek-v4-flash,deepseek-v4-pro",
+            "LITELLM_MODEL=deepseek/deepseek-v4-flash",
             "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-flash",
             "LLM_TEMPERATURE=0.42",
             "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-flash,cohere/command-r-plus",
-            "VISION_MODEL=deepseek/deepseek-chat",
+            "VISION_MODEL=deepseek/deepseek-v4-flash",
         )
 
         response = self.service.update(
@@ -4007,10 +4007,10 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             "LLM_DEEPSEEK_PROTOCOL=deepseek",
             "LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY=sk-test-value",
-            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-flash,deepseek-v4-pro",
-            "LITELLM_MODEL=deepseek/deepseek-chat",
+            "LLM_DEEPSEEK_MODELS=deepseek-v4-flash,deepseek-v4-pro",
+            "LITELLM_MODEL=deepseek/deepseek-v4-flash",
             "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro",
-            "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,deepseek/deepseek-chat,cohere/command-r-plus",
+            "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,deepseek/deepseek-v4-flash,cohere/command-r-plus",
             "VISION_MODEL=deepseek/deepseek-v4-flash",
         )
 
@@ -4116,10 +4116,10 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             "LLM_DEEPSEEK_PROTOCOL=deepseek",
             "LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY=sk-test-value",
-            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-flash,deepseek-v4-pro",
-            "LITELLM_MODEL=deepseek/deepseek-chat",
+            "LLM_DEEPSEEK_MODELS=deepseek-v4-flash,deepseek-v4-pro",
+            "LITELLM_MODEL=deepseek/deepseek-v4-flash",
             "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro",
-            "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,deepseek/deepseek-chat,cohere/command-r-plus",
+            "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,deepseek/deepseek-v4-flash,cohere/command-r-plus",
             "VISION_MODEL=deepseek/deepseek-v4-flash",
         )
 

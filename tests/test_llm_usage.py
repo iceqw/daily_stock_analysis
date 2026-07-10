@@ -649,7 +649,7 @@ class TestLLMUsageNormalizer(unittest.TestCase):
                 "prompt_cache_hit_tokens": 40,
                 "prompt_cache_miss_tokens": 60,
             },
-            model="deepseek/deepseek-chat",
+            model="deepseek/deepseek-v4-flash",
         )
 
         self.assertEqual(usage["prompt_tokens"], 100)
@@ -665,7 +665,7 @@ class TestLLMUsageNormalizer(unittest.TestCase):
                 "prompt_cache_hit_tokens": 40,
                 "prompt_cache_miss_tokens": 60,
             },
-            model="openai/deepseek-chat",
+            model="openai/deepseek-v4-flash",
         )
 
         self.assertEqual(usage["prompt_tokens"], 100)
@@ -684,7 +684,7 @@ class TestLLMUsageNormalizer(unittest.TestCase):
                 "prompt_cache_hit_tokens": 40,
                 "prompt_cache_miss_tokens": 60,
             },
-            model="openai/deepseek-chat",
+            model="openai/deepseek-v4-flash",
         )
 
         self.assertEqual(usage["cache_observation"], "invalid_provider_usage")
@@ -869,7 +869,7 @@ class TestLLMUsageNormalizer(unittest.TestCase):
                     "prompt_cache_hit_tokens": 40,
                     "prompt_cache_miss_tokens": 60,
                 },
-                "deepseek/deepseek-chat",
+                "deepseek/deepseek-v4-flash",
                 {
                     "completion_tokens": 10,
                     "prompt_cache_hit_tokens": 40,
@@ -1250,7 +1250,7 @@ class TestLegacyMessageStabilityAudit(unittest.TestCase):
                     "| 股票名称 | **贵州茅台** |\n"
                     "| 分析日期 | 2026-06-19 |\n\n"
                     "## 📈 技术面数据\n"
-                    "收盘价 1500 元\n\n"
+                    "收盘�?1500 元\n\n"
                     "## 📰 舆情情报\n"
                     "IMPORTANT_NEWS_TEXT\n"
                 ),

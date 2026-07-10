@@ -1126,7 +1126,7 @@ GEMINI_MODEL=gemini-3.1-pro-preview
 OPENAI_API_KEY=xxx
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
-# deepseek-chat / deepseek-reasoner remain compatible, but DeepSeek marks them deprecated after 2026/07/24
+# deepseek-chat / deepseek-reasoner have been deprecated since 2026/07/24, use deepseek-v4-flash / deepseek-v4-pro
 ```
 
 ### Advanced Model Routing (Powered by LiteLLM)

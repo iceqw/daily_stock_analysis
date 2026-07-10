@@ -857,22 +857,46 @@ class AlertWorker:
         if rule_id <= 0:
             return
         now_dt = self._now_datetime()
-        try:
-            self.service.repo.upsert_cooldown(
-                rule_id=rule_id,
-                rule_key=runtime_rule.key,
-                target=self._effective_target(runtime_rule),
-                severity=runtime_rule.severity,
-                last_triggered_at=now_dt,
-                cooldown_until=now_dt + timedelta(seconds=cooldown_seconds),
-                reason=self.service._sanitize_text(result.get("reason") or result.get("message")),
-            )
-        except Exception as exc:
-            logger.warning(
-                "[AlertWorker] Failed to update alert cooldown for %s: %s",
-                self._display_target(runtime_rule),
-                self.service._sanitize_text(str(exc) or "cooldown write failed"),
-            )
+        last_exc: Optional[Exception] = None
+        max_retries = 3
+        retry_delays = [1.0, 2.0, 4.0]  # exponential backoff
+
+        for attempt in range(max_retries + 1):
+            try:
+                self.service.repo.upsert_cooldown(
+                    rule_id=rule_id,
+                    rule_key=runtime_rule.key,
+                    target=self._effective_target(runtime_rule),
+                    severity=runtime_rule.severity,
+                    last_triggered_at=now_dt,
+                    cooldown_until=now_dt + timedelta(seconds=cooldown_seconds),
+                    reason=self.service._sanitize_text(result.get("reason") or result.get("message")),
+                )
+                return  # success
+            except Exception as exc:
+                last_exc = exc
+                if attempt < max_retries:
+                    delay = retry_delays[attempt]
+                    logger.debug(
+                        "[AlertWorker] Cooldown write attempt %d/%d failed for %s, retrying in %.1fs: %s",
+                        attempt + 1, max_retries + 1,
+                        self._display_target(runtime_rule),
+                        delay,
+                        self.service._sanitize_text(str(exc) or "cooldown write failed"),
+                    )
+                    time.sleep(delay)
+
+        # All retries exhausted — fall back to process-local fingerprint
+        logger.error(
+            "[AlertWorker] All %d cooldown write retries failed for %s (last error: %s); "
+            "falling back to process-local fingerprint for %ds",
+            max_retries + 1,
+            self._display_target(runtime_rule),
+            self.service._sanitize_text(str(last_exc) or "unknown"),
+            cooldown_seconds,
+        )
+        fallback_key = self._db_cooldown_fallback_key(runtime_rule.key)
+        self._mark_notified(fallback_key, ttl_seconds=cooldown_seconds)
 
     @staticmethod
     def _effective_target(runtime_rule: RuntimeAlertRule) -> str:

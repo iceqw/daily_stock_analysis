@@ -220,7 +220,7 @@ PROXY_PORT=10809
 OPENAI_API_KEY=sk-xxxxxxxx
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
-# deepseek-chat / deepseek-reasoner 仍兼容，但官方已标记为 2026/07/24 后废弃
+# deepseek-chat / deepseek-reasoner 已于 2026/07/24 废弃，请使用 deepseek-v4-flash / deepseek-v4-pro
 ```
 
 支持的模型服务：
@@ -396,4 +396,18 @@ python main.py --market-only
 
 ---
 
-*最后更新：2026-04-20*
+### Q40: 为什么短时间内重复运行分析没有收到通知？
+
+**原因**：通知去重机制默认启用（`NOTIFICATION_DEDUP_TTL_SECONDS=3600`，即 1 小时内相同内容不重复发送；`NOTIFICATION_COOLDOWN_SECONDS=600`，即 10 分钟内同 key 不重复发送）。
+
+**恢复旧行为**：在 `.env` 中设置：
+```bash
+NOTIFICATION_DEDUP_TTL_SECONDS=0
+NOTIFICATION_COOLDOWN_SECONDS=0
+```
+
+**跨进程去重**：去重状态会持久化至 SQLite 的 `notification_dedup_entries` 表，Docker Compose 双服务模式（analyzer + server）下共享状态，不会重复推送。
+
+---
+
+*最后更新：2026-07-09*

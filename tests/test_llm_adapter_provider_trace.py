@@ -95,7 +95,7 @@ def test_convert_messages_skips_entire_trace_segment_for_mismatched_attempt() ->
             "role": "assistant",
             "content": "checking",
             "_trace_provider": "deepseek",
-            "_trace_model": "deepseek/deepseek-chat",
+            "_trace_model": "deepseek/deepseek-v4-flash",
             "reasoning_content": "provider-only",
             "tool_calls": [
                 {
@@ -111,13 +111,13 @@ def test_convert_messages_skips_entire_trace_segment_for_mismatched_attempt() ->
             "tool_call_id": "call_1",
             "content": "tool-result",
             "_trace_provider": "deepseek",
-            "_trace_model": "deepseek/deepseek-chat",
+            "_trace_model": "deepseek/deepseek-v4-flash",
         },
         {"role": "assistant", "content": "a1-final"},
     ]
 
     primary = adapter._convert_messages(messages, target_model="openai/gpt-4o-mini")
-    fallback = adapter._convert_messages(messages, target_model="deepseek/deepseek-chat")
+    fallback = adapter._convert_messages(messages, target_model="deepseek/deepseek-v4-flash")
 
     assert [msg["role"] for msg in primary] == ["user", "assistant"]
     assert primary[-1]["content"] == "a1-final"

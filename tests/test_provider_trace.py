@@ -55,7 +55,7 @@ def test_extract_trace_scans_only_current_run_and_keeps_multi_step_tool_loop() -
         {
             "role": "assistant",
             "_trace_provider": "deepseek",
-            "_trace_model": "deepseek/deepseek-chat",
+            "_trace_model": "deepseek/deepseek-v4-flash",
             "reasoning_content": "old",
             "tool_calls": [{"id": "old", "name": "echo", "arguments": {}}],
         },
@@ -64,7 +64,7 @@ def test_extract_trace_scans_only_current_run_and_keeps_multi_step_tool_loop() -
         {
             "role": "assistant",
             "_trace_provider": "deepseek",
-            "_trace_model": "deepseek/deepseek-chat",
+            "_trace_model": "deepseek/deepseek-v4-flash",
             "content": "step1",
             "reasoning_content": "r1",
             "tool_calls": [{"id": "c1", "name": "echo", "arguments": {}}],
@@ -73,7 +73,7 @@ def test_extract_trace_scans_only_current_run_and_keeps_multi_step_tool_loop() -
         {
             "role": "assistant",
             "_trace_provider": "deepseek",
-            "_trace_model": "deepseek/deepseek-chat",
+            "_trace_model": "deepseek/deepseek-v4-flash",
             "content": "step2",
             "reasoning_content": "r2",
             "tool_calls": [{"id": "c2", "name": "echo", "arguments": {}}],
@@ -105,7 +105,7 @@ def test_extract_trace_drops_deepseek_without_required_tool_reasoning_pair_and_m
             {
                 "role": "assistant",
                 "_trace_provider": "deepseek",
-                "_trace_model": "deepseek/deepseek-chat",
+                "_trace_model": "deepseek/deepseek-v4-flash",
                 "reasoning_content": "reasoning-only",
                 "content": "final",
             },
@@ -122,7 +122,7 @@ def test_extract_trace_drops_deepseek_without_required_tool_reasoning_pair_and_m
             {
                 "role": "assistant",
                 "_trace_provider": "deepseek",
-                "_trace_model": "deepseek/deepseek-chat",
+                "_trace_model": "deepseek/deepseek-v4-flash",
                 "tool_calls": [
                     {
                         "id": "c0",
@@ -146,7 +146,7 @@ def test_extract_trace_drops_deepseek_without_required_tool_reasoning_pair_and_m
             {
                 "role": "assistant",
                 "_trace_provider": "deepseek",
-                "_trace_model": "deepseek/deepseek-chat",
+                "_trace_model": "deepseek/deepseek-v4-flash",
                 "reasoning_content": "r1",
                 "tool_calls": [{"id": "c1", "name": "echo", "arguments": {}}],
             },

@@ -236,7 +236,7 @@ class RunDiagnosticsP1TestCase(unittest.TestCase):
             )
             from src.services.run_diagnostics import record_history_run, record_llm_run, record_notification_run
 
-            record_llm_run(success=True, model="deepseek-chat", duration_ms=34)
+            record_llm_run(success=True, model="deepseek-v4-flash", duration_ms=34)
             record_history_run(report_saved=True, metadata_saved=True, analysis_history_id=7)
             record_notification_run(channel="report", status="success", success=True)
         finally:
@@ -329,7 +329,7 @@ class RunDiagnosticsP1TestCase(unittest.TestCase):
                         "id": "provider_daily_data_unsafe_1",
                         "lane": "data_source",
                         "kind": "data_source",
-                        "label": "日线K线 · UnsafeFetcher",
+                        "label": "日线K�?· UnsafeFetcher",
                         "status": "failed",
                         "message": r"failed in C:\Users\activer\.env raw_response=full-raw-response",
                     },

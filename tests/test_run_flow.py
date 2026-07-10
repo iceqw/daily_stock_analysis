@@ -138,7 +138,7 @@ def _diagnostics(*, with_fallback: bool = False, unsafe: bool = False) -> dict:
             {
                 "trace_id": "trace-flow",
                 "provider": "litellm",
-                "model": "deepseek-chat",
+                "model": "deepseek-v4-flash",
                 "call_type": "analysis",
                 "success": True,
                 "tokens": 1234,
@@ -183,7 +183,7 @@ def _history_record(
         name=name,
         report_type=report_type,
         created_at=datetime(2026, 6, 8, 10, 0, 6),
-        raw_result=json.dumps(raw_result or {"success": True, "model_used": "deepseek-chat"}, ensure_ascii=False),
+        raw_result=json.dumps(raw_result or {"success": True, "model_used": "deepseek-v4-flash"}, ensure_ascii=False),
         context_snapshot=json.dumps(context_snapshot, ensure_ascii=False) if context_snapshot is not None else None,
     )
 
@@ -239,7 +239,7 @@ class RunFlowTestCase(unittest.TestCase):
             stock_code="600519",
             stock_name="贵州茅台",
             status=TaskStatus.PENDING,
-            message="任务已加入队列",
+            message="任务已加入队�?,
             created_at=datetime(2026, 6, 8, 10, 0, 0),
         )
 
@@ -260,7 +260,7 @@ class RunFlowTestCase(unittest.TestCase):
             stock_code="600519",
             stock_name="贵州茅台",
             status=TaskStatus.PROCESSING,
-            message="正在分析中",
+            message="正在分析�?,
             created_at=datetime(2026, 6, 8, 10, 0, 0),
             started_at=datetime(2026, 6, 8, 10, 0, 1),
             flow_events=[
@@ -270,15 +270,15 @@ class RunFlowTestCase(unittest.TestCase):
                     "severity": "success",
                     "type": "provider_run",
                     "node_id": "provider_daily_unit_1",
-                    "title": "日线K线成功",
-                    "message": "日线K线 UnitFetcher 成功",
+                    "title": "日线K线成�?,
+                    "message": "日线K�?UnitFetcher 成功",
                     "metadata": {
                         "provider": "UnitFetcher",
                         "node": {
                             "id": "provider_daily_unit_1",
                             "lane": "data_source",
                             "kind": "data_source",
-                            "label": "日线K线 · UnitFetcher",
+                            "label": "日线K�?· UnitFetcher",
                             "status": "success",
                             "provider": "UnitFetcher",
                             "record_count": 30,
@@ -309,7 +309,7 @@ class RunFlowTestCase(unittest.TestCase):
                     "severity": "success",
                     "type": "provider_run",
                     "node_id": "provider_daily_unit_1",
-                    "title": "日线K线成功",
+                    "title": "日线K线成�?,
                     "metadata": {
                         "provider": "DailyFetcher",
                         "data_type": "daily_data",
@@ -317,7 +317,7 @@ class RunFlowTestCase(unittest.TestCase):
                             "id": "provider_daily_unit_1",
                             "lane": "data_source",
                             "kind": "data_source",
-                            "label": "日线K线 · DailyFetcher",
+                            "label": "日线K�?· DailyFetcher",
                             "status": "success",
                             "provider": "DailyFetcher",
                         },
@@ -455,12 +455,12 @@ class RunFlowTestCase(unittest.TestCase):
                 record_count=30,
             )
             record_llm_run_started(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 call_type="analysis",
             )
             record_llm_run(
                 success=True,
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 call_type="analysis",
                 duration_ms=900,
             )
@@ -561,12 +561,12 @@ class RunFlowTestCase(unittest.TestCase):
         )
         try:
             record_llm_run_started(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 call_type="agent_analysis",
             )
             record_llm_run(
                 success=True,
-                model="deepseek/deepseek-chat",
+                model="deepseek/deepseek-v4-flash",
                 call_type="agent_analysis",
                 duration_ms=98000,
             )
@@ -605,7 +605,7 @@ class RunFlowTestCase(unittest.TestCase):
         try:
             record_llm_run(
                 success=True,
-                model="deepseek/deepseek-chat",
+                model="deepseek/deepseek-v4-flash",
                 call_type="agent_analysis",
                 duration_ms=98000,
             )
@@ -693,7 +693,7 @@ class RunFlowTestCase(unittest.TestCase):
         snapshot = build_history_run_flow_snapshot(_history_record(context_snapshot=context_snapshot))
 
         self.assertEqual(snapshot.status, "success")
-        self.assertEqual(snapshot.summary.model, "deepseek-chat")
+        self.assertEqual(snapshot.summary.model, "deepseek-v4-flash")
         self.assertEqual(snapshot.summary.failed_attempts, 0)
         node_ids = {node.id for node in snapshot.nodes}
         self.assertIn("context_pack", node_ids)
@@ -894,7 +894,7 @@ class RunFlowTestCase(unittest.TestCase):
                     },
                     {
                         "key": "fundamentals",
-                        "label": "基本面",
+                        "label": "基本�?,
                         "status": "not_supported",
                         "source": None,
                         "warnings": [],
@@ -954,7 +954,7 @@ class RunFlowTestCase(unittest.TestCase):
         diagnostics["llm_runs"][0].update(
             {
                 "provider": "litellm",
-                "model": "deepseek-chat",
+                "model": "deepseek-v4-flash",
                 "base_url": "https://llm.example.com/v1",
                 "api_key": "sk-runtime-secret",
             }
@@ -978,7 +978,7 @@ class RunFlowTestCase(unittest.TestCase):
         snapshot = build_history_run_flow_snapshot(_history_record(context_snapshot=context_snapshot))
         payload = json.dumps(snapshot.model_dump(mode="json", by_alias=True), ensure_ascii=False)
 
-        self.assertIn("deepseek-chat", payload)
+        self.assertIn("deepseek-v4-flash", payload)
         self.assertIn("litellm", payload)
         for leaked in (
             "base_url",
@@ -1076,7 +1076,7 @@ class RunFlowTestCase(unittest.TestCase):
 
         provider_labels = {node.label for node in snapshot.nodes if node.kind == "data_source"}
         self.assertEqual(snapshot.stock_code, "MARKET")
-        self.assertNotIn("日线K线 · StockFetcher", provider_labels)
+        self.assertNotIn("日线K�?· StockFetcher", provider_labels)
         self.assertIn("新闻舆情 · Tavily", provider_labels)
 
     def test_stock_run_flow_filters_nested_market_context_artifacts(self) -> None:

@@ -131,7 +131,7 @@ class LLMChannelConfigTestCase(unittest.TestCase):
             "LLM_PRIMARY_PROTOCOL": "deepseek",
             "LLM_PRIMARY_BASE_URL": "https://api.deepseek.com/v1",
             "LLM_PRIMARY_API_KEY": "sk-test-value",
-            "LLM_PRIMARY_MODELS": "deepseek-chat",
+            "LLM_PRIMARY_MODELS": "deepseek-v4-flash",
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -139,8 +139,8 @@ class LLMChannelConfigTestCase(unittest.TestCase):
 
         self.assertEqual(config.llm_models_source, "llm_channels")
         self.assertEqual(config.llm_channels[0]["protocol"], "deepseek")
-        self.assertEqual(config.llm_channels[0]["models"], ["deepseek/deepseek-chat"])
-        self.assertEqual(config.llm_model_list[0]["litellm_params"]["model"], "deepseek/deepseek-chat")
+        self.assertEqual(config.llm_channels[0]["models"], ["deepseek/deepseek-v4-flash"])
+        self.assertEqual(config.llm_model_list[0]["litellm_params"]["model"], "deepseek/deepseek-v4-flash")
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
@@ -853,12 +853,8 @@ class LLMChannelConfigTestCase(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             config = Config._load_from_env()
 
-        self.assertEqual(config.litellm_model, "deepseek/deepseek-chat")
-        mock_warning.assert_called_once_with(
-            "Deprecation warning:\n"
-            "deepseek-chat will be deprecated on 2026-07-24,\n"
-            "please migrate to deepseek-v4-flash."
-        )
+        self.assertEqual(config.litellm_model, "deepseek/deepseek-v4-flash")
+        mock_warning.assert_not_called()
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
@@ -878,7 +874,7 @@ class LLMChannelConfigTestCase(unittest.TestCase):
             config = Config._load_from_env()
 
         self.assertEqual(config.litellm_model, "deepseek/deepseek-chat")
-        mock_warning.assert_not_called()
+        mock_warning.assert_called_once()
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
@@ -1155,14 +1151,14 @@ class LLMChannelConfigTestCase(unittest.TestCase):
         env = {
             "OPENAI_API_KEY": "sk-test-value",
             "OPENAI_MODEL": "gpt-4o-mini",
-            "AGENT_LITELLM_MODEL": "deepseek-chat",
+            "AGENT_LITELLM_MODEL": "deepseek-v4-flash",
         }
 
         with patch.dict(os.environ, env, clear=True):
             config = Config._load_from_env()
 
-        self.assertEqual(config.agent_litellm_model, "openai/deepseek-chat")
-        self.assertEqual(get_effective_agent_primary_model(config), "openai/deepseek-chat")
+        self.assertEqual(config.agent_litellm_model, "openai/deepseek-v4-flash")
+        self.assertEqual(get_effective_agent_primary_model(config), "openai/deepseek-v4-flash")
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])

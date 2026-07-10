@@ -51,7 +51,7 @@ def _make_adapter_module(
 ) -> SimpleNamespace:
     return SimpleNamespace(
         screen=screen or MagicMock(return_value=[]),
-        list_strategies=list_strategies or (lambda: [{"id": "dual_low", "name": "双低选股", "description": "", "category": "价值"}]),
+        list_strategies=list_strategies or (lambda: [{"id": "dual_low", "name": "双低选股", "description": "", "category": "价�?}]),
         get_status=get_status or (lambda: {"supported_markets": ["cn"], "contract_version": "1", "version": "0.2.0", "strategy_count": 1}),
     )
 
@@ -276,7 +276,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         config = self._config(enabled=True)
         fake_module = _make_adapter_module(
             list_strategies=lambda: [
-                {"id": "dual_low", "name": "双低选股", "description": "value", "category": "价值"},
+                {"id": "dual_low", "name": "双低选股", "description": "value", "category": "价�?},
                 {"id": "trend_quality", "title": "趋势质量", "description": "trend", "tag": "框架"},
             ],
         )
@@ -306,7 +306,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 "name": "AI算力",
                 "heat_score": 88.0,
                 "change_pct": 6.2,
-                "stage": "加速主升",
+                "stage": "加速主�?,
                 "leaders": ["中际旭创"],
             }
         ])
@@ -352,9 +352,9 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         class FakeProvider(alphasift_service.DsaEastMoneyHotspotProvider):
             def hotspot_rows(self, *, top: int = 12) -> List[Dict[str, Any]]:
                 return [
-                    {"topic": "钼", "name": "钼", "heat_score": 96.0, "change_pct": 10.0, "leaders": ["盛龙股份"]},
+                    {"topic": "�?, "name": "�?, "heat_score": 96.0, "change_pct": 10.0, "leaders": ["盛龙股份"]},
                     {"topic": "铅锌", "name": "铅锌", "heat_score": 92.0, "change_pct": 9.14, "leaders": ["豫光金铅"]},
-                    {"topic": "铜", "name": "铜", "heat_score": 89.0, "change_pct": 7.03, "leaders": ["江西铜业"]},
+                    {"topic": "�?, "name": "�?, "heat_score": 89.0, "change_pct": 7.03, "leaders": ["江西铜业"]},
                 ][:top]
 
         discover = MagicMock(return_value=ThinRows([
@@ -374,7 +374,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
 
         self.assertEqual(payload["provider_used"], "dsa_eastmoney_board_change")
         self.assertEqual(payload["hotspot_count"], 3)
-        self.assertEqual([item["topic"] for item in payload["hotspots"][:3]], ["钼", "铅锌", "铜"])
+        self.assertEqual([item["topic"] for item in payload["hotspots"][:3]], ["�?, "铅锌", "�?])
         self.assertTrue(payload["fallback_used"])
 
     def test_hotspots_enriches_missing_metrics_from_dsa_provider(self) -> None:
@@ -390,8 +390,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         class FakeProvider(alphasift_service.DsaEastMoneyHotspotProvider):
             def hotspot_rows(self, *, top: int = 12) -> List[Dict[str, Any]]:
                 return [{
-                    "topic": "铜",
-                    "name": "工业金属 · 铜",
+                    "topic": "�?,
+                    "name": "工业金属 · �?,
                     "heat_score": 92.0,
                     "change_pct": 7.03,
                     "trend_score": 99.0,
@@ -402,8 +402,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 }]
 
         discover = MagicMock(return_value=HotspotRows([{
-            "topic": "铜",
-            "name": "铜",
+            "topic": "�?,
+            "name": "�?,
             "heat_score": 92.0,
             "change_pct": 7.03,
         }]))
@@ -419,7 +419,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 payload = self._hotspots(config=config, provider="akshare", top=1, refresh=True)
 
         hotspot = payload["hotspots"][0]
-        self.assertEqual(hotspot["name"], "工业金属 · 铜")
+        self.assertEqual(hotspot["name"], "工业金属 · �?)
         self.assertEqual(hotspot["trend_score"], 99.0)
         self.assertEqual(hotspot["persistence_score"], 64.3)
         self.assertEqual(hotspot["sample_stock_count"], 11)
@@ -584,7 +584,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(payload["hotspots"], [])
         self.assertEqual(payload["hotspot_count"], 0)
         self.assertEqual(payload["source_errors"], ["eastmoney_hotspot_unavailable"])
-        self.assertEqual(payload["message"], "热点源连接中断，暂无可用缓存。")
+        self.assertEqual(payload["message"], "热点源连接中断，暂无可用缓存�?)
         self.assertNotIn("RemoteDisconnected", payload["message"])
         discover.assert_called_once()
 
@@ -622,7 +622,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(payload["hotspots"], [])
         self.assertEqual(payload["hotspot_count"], 0)
         self.assertEqual(payload["source_errors"], ["eastmoney_hotspot_unavailable"])
-        self.assertEqual(payload["message"], "热点源连接中断，暂无可用缓存。")
+        self.assertEqual(payload["message"], "热点源连接中断，暂无可用缓存�?)
         self.assertNotIn("RemoteDisconnected", payload["message"])
         discover.assert_called_once()
 
@@ -715,7 +715,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         rows = HotspotRows([
             {"topic": "机器人执行器", "heat_score": 86.0, "change_pct": 4.2},
             {"topic": "减速器", "heat_score": 82.0, "change_pct": 3.8},
-            {"topic": "铜", "heat_score": 80.0, "change_pct": 3.2},
+            {"topic": "�?, "heat_score": 80.0, "change_pct": 3.2},
         ])
         captured: Dict[str, Any] = {}
 
@@ -847,15 +847,15 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
 
     def test_hotspot_news_local_summary_extracts_event_instead_of_truncating(self) -> None:
         text = (
-            "【股商异动】钼板块异动大涨5.64%！金钼股份涨停，机构看好行业机遇。"
-            "消息称以钼代钨带动小金属行情，市场关注材料替代和供需偏紧。"
-            "截至10:30，相关个股现价和成交额继续变化，后续建议关注供需平衡。"
+            "【股商异动】钼板块异动大涨5.64%！金钼股份涨停，机构看好行业机遇�?
+            "消息称以钼代钨带动小金属行情，市场关注材料替代和供需偏紧�?
+            "截至10:30，相关个股现价和成交额继续变化，后续建议关注供需平衡�?
         )
 
-        summary = alphasift_service._summarize_hotspot_news_event_locally(topic="钼", text=text)
+        summary = alphasift_service._summarize_hotspot_news_event_locally(topic="�?, text=text)
 
         self.assertIn("以钼代钨", summary)
-        self.assertIn("小金属", summary)
+        self.assertIn("小金�?, summary)
         self.assertNotIn("截至", summary)
         self.assertNotIn("后续建议", summary)
         self.assertLessEqual(len(summary), alphasift_service.DSA_ALPHASIFT_HOTSPOT_EVENT_SUMMARY_MAX_CHARS)
@@ -873,7 +873,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                     "canonical_topic": "算力",
                     "aliases": "AI算力",
                     "heat_score": 88.0,
-                    "stage": "加速主升",
+                    "stage": "加速主�?,
                     "leaders": ["算力龙头"],
                     "quality_status": "stale",
                     "missing_fields": "live_stocks",
@@ -1010,10 +1010,10 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         config = self._config(enabled=True)
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         provider.hotspot_detail = MagicMock(return_value={
-            "topic": "钼",
-            "name": "小金属 · 钼",
-            "summary": "钼 当前涨跌幅 10.00%。",
-            "route": [{"title": "当日发酵", "description": "钼板块异动。", "source": "eastmoney_board_change"}],
+            "topic": "�?,
+            "name": "小金�?· �?,
+            "summary": "�?当前涨跌�?10.00%�?,
+            "route": [{"title": "当日发酵", "description": "钼板块异动�?, "source": "eastmoney_board_change"}],
             "stocks": [{"code": "001257", "name": "盛龙股份"}],
             "stock_count": 1,
             "source_errors": [],
@@ -1026,10 +1026,10 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 patch("src.services.alphasift_service._resolve_hotspot_provider", return_value=("akshare", provider)),
                 patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace()),
             ):
-                first = self._hotspot_detail(config=config, provider="akshare", topic="钼")
-                second = self._hotspot_detail(config=config, provider="akshare", topic="钼")
+                first = self._hotspot_detail(config=config, provider="akshare", topic="�?)
+                second = self._hotspot_detail(config=config, provider="akshare", topic="�?)
 
-        provider.hotspot_detail.assert_called_once_with("钼")
+        provider.hotspot_detail.assert_called_once_with("�?)
         self.assertFalse(first.get("cache_used", False))
         self.assertTrue(second["cache_used"])
         self.assertEqual(second["stocks"][0]["name"], "盛龙股份")
@@ -1040,18 +1040,18 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         provider.hotspot_detail = MagicMock(side_effect=[
             {
-                "topic": "钼",
-                "summary": "旧详情",
-                "route": [{"title": "旧发酵", "description": "旧缓存", "source": "eastmoney_board_change"}],
-                "stocks": [{"code": "001257", "name": "旧龙头"}],
+                "topic": "�?,
+                "summary": "旧详�?,
+                "route": [{"title": "旧发�?, "description": "旧缓�?, "source": "eastmoney_board_change"}],
+                "stocks": [{"code": "001257", "name": "旧龙�?}],
                 "stock_count": 1,
                 "source_errors": [],
             },
             {
-                "topic": "钼",
-                "summary": "新详情",
-                "route": [{"title": "新发酵", "description": "实时刷新", "source": "eastmoney_board_change"}],
-                "stocks": [{"code": "001257", "name": "新龙头"}],
+                "topic": "�?,
+                "summary": "新详�?,
+                "route": [{"title": "新发�?, "description": "实时刷新", "source": "eastmoney_board_change"}],
+                "stocks": [{"code": "001257", "name": "新龙�?}],
                 "stock_count": 1,
                 "source_errors": [],
             },
@@ -1064,24 +1064,24 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 patch("src.services.alphasift_service._resolve_hotspot_provider", return_value=("akshare", provider)),
                 patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace()),
             ):
-                first = self._hotspot_detail(config=config, provider="akshare", topic="钼")
-                cached = self._hotspot_detail(config=config, provider="akshare", topic="钼")
-                refreshed = self._hotspot_detail(config=config, provider="akshare", topic="钼", refresh=True)
+                first = self._hotspot_detail(config=config, provider="akshare", topic="�?)
+                cached = self._hotspot_detail(config=config, provider="akshare", topic="�?)
+                refreshed = self._hotspot_detail(config=config, provider="akshare", topic="�?, refresh=True)
 
         self.assertEqual(provider.hotspot_detail.call_count, 2)
-        self.assertEqual(first["stocks"][0]["name"], "旧龙头")
-        self.assertEqual(cached["stocks"][0]["name"], "旧龙头")
+        self.assertEqual(first["stocks"][0]["name"], "旧龙�?)
+        self.assertEqual(cached["stocks"][0]["name"], "旧龙�?)
         self.assertTrue(cached["cache_used"])
-        self.assertEqual(refreshed["stocks"][0]["name"], "新龙头")
+        self.assertEqual(refreshed["stocks"][0]["name"], "新龙�?)
         self.assertFalse(refreshed.get("cache_used", False))
 
     def test_hotspot_detail_adds_real_search_event_when_configured(self) -> None:
         config = Config(alphasift_enabled=True, bocha_api_keys=["test-key"])
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         provider.hotspot_detail = MagicMock(return_value={
-            "topic": "钼",
-            "summary": "钼 当前涨跌幅 10.00%。",
-            "route": [{"title": "当日发酵", "description": "钼板块异动。", "source": "eastmoney_board_change"}],
+            "topic": "�?,
+            "summary": "�?当前涨跌�?10.00%�?,
+            "route": [{"title": "当日发酵", "description": "钼板块异动�?, "source": "eastmoney_board_change"}],
             "stocks": [],
             "stock_count": 0,
             "source_errors": [],
@@ -1092,11 +1092,11 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             provider="Bocha",
             results=[
                 SimpleNamespace(
-                    title="以钼代钨带动小金属行情",
+                    title="以钼代钨带动小金属行�?,
                     snippet=(
-                        "以钼代钨带动小金属行情 2026-06-12 市场关注材料替代和供需偏紧。"
-                        "金钼股份、盛龙股份等相关个股出现异动，报道还详细列出价格、成交、"
-                        "机构观点、供需格局和完整产业链背景，后续建议继续关注供需平衡与政策动力。"
+                        "以钼代钨带动小金属行�?2026-06-12 市场关注材料替代和供需偏紧�?
+                        "金钼股份、盛龙股份等相关个股出现异动，报道还详细列出价格、成交�?
+                        "机构观点、供需格局和完整产业链背景，后续建议继续关注供需平衡与政策动力�?
                     ),
                     url="https://example.com/news",
                     source="ExampleNews",
@@ -1113,14 +1113,14 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace()),
                 patch("src.search_service.SearchService", return_value=search_service),
             ):
-                payload = self._hotspot_detail(config=config, provider="akshare", topic="钼")
+                payload = self._hotspot_detail(config=config, provider="akshare", topic="�?)
 
         self.assertEqual(payload["route"][0]["source"], "ExampleNews")
         self.assertEqual(payload["route"][0]["title"], "消息催化")
         self.assertEqual(payload["route"][0]["date"], "2026-06-12")
         self.assertEqual(payload["route"][0]["url"], "https://example.com/news")
         self.assertLessEqual(len(payload["route"][0]["description"]), 93)
-        self.assertNotIn("完整产业链背景", payload["route"][0]["description"])
+        self.assertNotIn("完整产业链背�?, payload["route"][0]["description"])
         search_service.search_stock_news.assert_called_once()
 
     def test_hotspot_detail_prefers_timeline_when_contract_route_is_empty(self) -> None:
@@ -1163,9 +1163,9 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         provider.hotspot_detail = MagicMock(return_value={
             "topic": "机器人执行器",
-            "summary": "机器人执行器 盘中发酵。",
+            "summary": "机器人执行器 盘中发酵�?,
             "route": [{"title": "盘中发酵", "description": "provider fallback route.", "source": "eastmoney_board_change"}],
-            "stocks": [{"code": "002000", "name": "旧路径个股"}],
+            "stocks": [{"code": "002000", "name": "旧路径个�?}],
             "stock_count": 1,
             "source_errors": [],
         })
@@ -1197,13 +1197,13 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         provider.hotspot_detail = MagicMock(return_value={
             "topic": "机器人执行器",
-            "summary": "机器人执行器 盘中发酵。",
+            "summary": "机器人执行器 盘中发酵�?,
             "route": [{
                 "title": "盘中发酵",
-                "description": "机器人执行器 当前有异动记录。",
+                "description": "机器人执行器 当前有异动记录�?,
                 "source": "eastmoney_board_change",
             }],
-            "stocks": [{"code": "002000", "name": "旧路径个股"}],
+            "stocks": [{"code": "002000", "name": "旧路径个�?}],
             "stock_count": 1,
             "source_errors": [],
         })
@@ -1245,9 +1245,9 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             def hotspot_detail(self, topic: str) -> Dict[str, Any]:
                 return {
                     "topic": topic,
-                    "summary": f"{topic} 盘中发酵。",
-                    "route": [{"title": "盘中发酵", "description": "出现大笔买入。"}],
-                    "stocks": [{"code": "920438", "name": "戈碧迦", "role": "异动核心"}],
+                    "summary": f"{topic} 盘中发酵�?,
+                    "route": [{"title": "盘中发酵", "description": "出现大笔买入�?}],
+                    "stocks": [{"code": "920438", "name": "戈碧�?, "role": "异动核心"}],
                     "stock_count": 1,
                     "source_errors": [],
                 }
@@ -1262,8 +1262,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(payload["provider"], "akshare")
         self.assertEqual(payload["topic"], "玻璃基板")
         self.assertEqual(payload["route"][0]["title"], "盘中发酵")
-        self.assertEqual(payload["stocks"][0]["name"], "戈碧迦")
-        self.assertEqual(payload["leader_stocks"][0]["name"], "戈碧迦")
+        self.assertEqual(payload["stocks"][0]["name"], "戈碧�?)
+        self.assertEqual(payload["leader_stocks"][0]["name"], "戈碧�?)
 
     def test_hotspot_detail_route_accepts_slash_containing_topic(self) -> None:
         config = self._config(enabled=True)
@@ -1334,8 +1334,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         class FakeProvider(alphasift_service.DsaEastMoneyHotspotProvider):
             def _fetch_eastmoney_constituents(self, topic: str, *, source: str) -> Any:
                 return pd.DataFrame([
-                    {"代码": "000001", "名称": "平安银行", "涨跌幅": 1.2},
-                    {"代码": "000002", "名称": "万科A", "涨跌幅": 0.8},
+                    {"代码": "000001", "名称": "平安银行", "涨跌�?: 1.2},
+                    {"代码": "000002", "名称": "万科A", "涨跌�?: 0.8},
                 ])
 
             def _fetch_ths_constituents(self, topic: str) -> Any:
@@ -1363,39 +1363,39 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         raw = pd.DataFrame([
             {
-                "板块名称": "钼",
-                "涨跌幅": 10.0,
-                "板块异动最频繁个股及所属类型-股票代码": "001257",
-                "板块异动最频繁个股及所属类型-股票名称": "盛龙股份",
+                "板块名称": "�?,
+                "涨跌�?: 10.0,
+                "板块异动最频繁个股及所属类�?股票代码": "001257",
+                "板块异动最频繁个股及所属类�?股票名称": "盛龙股份",
             },
             {
-                "板块名称": "钴",
-                "涨跌幅": 5.9,
-                "板块异动最频繁个股及所属类型-股票代码": "300618",
-                "板块异动最频繁个股及所属类型-股票名称": "寒锐钴业",
+                "板块名称": "�?,
+                "涨跌�?: 5.9,
+                "板块异动最频繁个股及所属类�?股票代码": "300618",
+                "板块异动最频繁个股及所属类�?股票名称": "寒锐钴业",
             },
             {
-                "板块名称": "铜",
-                "涨跌幅": 7.0,
-                "板块异动最频繁个股及所属类型-股票代码": "600362",
-                "板块异动最频繁个股及所属类型-股票名称": "江西铜业",
+                "板块名称": "�?,
+                "涨跌�?: 7.0,
+                "板块异动最频繁个股及所属类�?股票代码": "600362",
+                "板块异动最频繁个股及所属类�?股票名称": "江西铜业",
             },
         ])
         with patch.object(provider, "_fetch_board_changes_raw", return_value=raw):
-            frame = provider._related_hotspot_constituents("钼")
+            frame = provider._related_hotspot_constituents("�?)
 
         self.assertEqual(list(frame["code"]), ["001257", "300618"])
         self.assertEqual(frame.iloc[0]["role"], "小金属活跃股")
 
     def test_hotspot_route_is_grouped_by_daily_markers(self) -> None:
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
-        provider._fetch_ths_summary_event = MagicMock(return_value="2026-06-12：政策催化")
+        provider._fetch_ths_summary_event = MagicMock(return_value="2026-06-12：政策催�?)
         summary = {
             "板块名称": "AI算力",
-            "涨跌幅": 4.2,
-            "板块异动总次数": 186,
-            "板块异动最频繁个股及所属类型-股票名称": "中际旭创",
-            "板块具体异动类型列表及出现次数": [{"t": 8203, "ct": 8}, {"t": 8204, "ct": 6}],
+            "涨跌�?: 4.2,
+            "板块异动总次�?: 186,
+            "板块异动最频繁个股及所属类�?股票名称": "中际旭创",
+            "板块具体异动类型列表及出现次�?: [{"t": 8203, "ct": 8}, {"t": 8204, "ct": 6}],
         }
 
         route = provider._build_hotspot_route("AI算力", summary)
@@ -1410,7 +1410,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
         provider._fetch_ths_summary_event = MagicMock(return_value="")
 
-        route = provider._build_hotspot_route("钼", {})
+        route = provider._build_hotspot_route("�?, {})
 
         self.assertEqual(route[0]["source"], "fallback")
         self.assertNotIn("以钼代钨", route[0]["description"])
@@ -1431,11 +1431,11 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 return pd.DataFrame([{
                     "代码": "002138",
                     "名称": "顺络电子",
-                    "涨跌幅": 3.2,
+                    "涨跌�?: 3.2,
                 }])
 
             def _fetch_ths_summary_event(self, topic: str) -> str:
-                return "需求升温"
+                return "需求升�?
 
             def _fetch_ths_info(self, topic: str) -> Dict[str, str]:
                 return {}
@@ -1448,7 +1448,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
 
         self.assertEqual(payload["enabled"], True)
         self.assertEqual(payload["topic"], "MLCC")
-        self.assertEqual(payload["summary"], "MLCC 当前暂无可用的板块异动摘要。")
+        self.assertEqual(payload["summary"], "MLCC 当前暂无可用的板块异动摘要�?)
         self.assertEqual(payload["route"][0]["source"], "ths_summary")
         self.assertEqual(payload["stocks"][0]["name"], "顺络电子")
 
@@ -1470,7 +1470,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                     return pd.DataFrame([{
                         "代码": "300750",
                         "名称": "宁德时代",
-                        "涨跌幅": 2.6,
+                        "涨跌�?: 2.6,
                     }])
                 return pd.DataFrame()
 
@@ -1502,7 +1502,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         import pandas as pd
 
         provider = alphasift_service.DsaEastMoneyHotspotProvider()
-        fallback = pd.DataFrame([{"板块名称": "玻璃基板", "涨跌幅": 1.8, "序号": 1}])
+        fallback = pd.DataFrame([{"板块名称": "玻璃基板", "涨跌�?: 1.8, "序号": 1}])
         with (
             patch.object(provider, "_fetch_board_changes", return_value=pd.DataFrame()),
             patch.object(provider, "_fetch_rankings", side_effect=RuntimeError("ranking schema changed")),
@@ -1536,9 +1536,9 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         board_changes = pd.DataFrame([
             {
                 "板块名称": "AI算力",
-                "涨跌幅": 4.2,
-                "板块异动总次数": 186,
-                "板块异动最频繁个股及所属类型-股票名称": "中际旭创",
+                "涨跌�?: 4.2,
+                "板块异动总次�?: 186,
+                "板块异动最频繁个股及所属类�?股票名称": "中际旭创",
             },
         ])
 
@@ -1557,7 +1557,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
 
         self.assertEqual(_MockAkshare.calls, 1)
         self.assertEqual(frame.iloc[0]["name"], "AI算力")
-        self.assertEqual(frame.iloc[0]["stage"], "加速发酵")
+        self.assertEqual(frame.iloc[0]["stage"], "加速发�?)
         self.assertGreater(frame.iloc[0]["trend_score"], 0)
         self.assertGreater(frame.iloc[0]["persistence_score"], 0)
         self.assertEqual(frame.iloc[0]["sample_stock_count"], 1)
@@ -1635,7 +1635,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             task_id="screen-task-1",
             trace_id="screen-task-1",
             status=QueueTaskStatus.PENDING,
-            message="AlphaSift 选股任务已提交",
+            message="AlphaSift 选股任务已提�?,
         )
 
         with (
@@ -1727,7 +1727,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(caught.exception.detail.get("diagnostics", {}).get("resolution"), "no_auto_install")
         self.assertEqual(
             caught.exception.detail.get("diagnostics", {}).get("message"),
-            "请先检查后端日志并修复运行时异常，当前未触发修复安装。",
+            "请先检查后端日志并修复运行时异常，当前未触发修复安装�?,
         )
         install_mock.assert_not_called()
 
@@ -2016,7 +2016,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 return_value={
                     "success": True,
                     "provider": "test",
-                    "results": [{"title": "贵州茅台最新公告", "source": "测试源"}],
+                    "results": [{"title": "贵州茅台最新公�?, "source": "测试�?}],
                 },
             ),
         ):
@@ -2032,7 +2032,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(candidate["name"], "贵州茅台")
         self.assertEqual(candidate["price"], 1688.0)
         self.assertTrue(candidate["dsa_context"]["enriched"])
-        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公告")
+        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公�?)
         self.assertIn("DSA行情", candidate["dsa_analysis_summary"])
         self.assertEqual(payload["dsa_enrichment"]["enriched_count"], 1)
 
@@ -2051,8 +2051,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                                 "quote": {"price": 1688.0, "change_pct": 1.2},
                                 "warnings": ["from_alphasift_provider"],
                             },
-                            "dsa_news": [{"title": "贵州茅台最新公告", "source": "测试源"}],
-                            "dsa_analysis_summary": "DSA新闻: 贵州茅台最新公告",
+                            "dsa_news": [{"title": "贵州茅台最新公�?, "source": "测试�?}],
+                            "dsa_analysis_summary": "DSA新闻: 贵州茅台最新公�?,
                         }
                     ]
                 }
@@ -2075,8 +2075,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
 
         candidate = payload["candidates"][0]
         self.assertTrue(candidate["dsa_context"]["enriched"])
-        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公告")
-        self.assertEqual(candidate["dsa_analysis_summary"], "DSA新闻: 贵州茅台最新公告")
+        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公�?)
+        self.assertEqual(candidate["dsa_analysis_summary"], "DSA新闻: 贵州茅台最新公�?)
         self.assertEqual(payload["dsa_enrichment"]["enriched_count"], 1)
         self.assertEqual(payload["dsa_enrichment"]["warnings"], ["from_alphasift_provider"])
         quote_mock.assert_not_called()
@@ -2098,8 +2098,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                                 "quote": {"price": 1688.0, "change_pct": 1.2},
                                 "news": {
                                     "success": True,
-                                    "summary": "DSA新闻：贵州茅台最新公告",
-                                    "results": [{"title": "贵州茅台最新公告", "source": "测试源"}],
+                                    "summary": "DSA新闻：贵州茅台最新公�?,
+                                    "results": [{"title": "贵州茅台最新公�?, "source": "测试�?}],
                                 },
                                 "warnings": ["from_alphasift_provider"],
                             },
@@ -2125,8 +2125,8 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             )
 
         candidate = payload["candidates"][0]
-        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公告")
-        self.assertEqual(candidate["dsa_analysis_summary"], "DSA新闻：贵州茅台最新公告")
+        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公�?)
+        self.assertEqual(candidate["dsa_analysis_summary"], "DSA新闻：贵州茅台最新公�?)
         self.assertEqual(payload["dsa_enrichment"]["enriched_count"], 1)
         self.assertEqual(payload["dsa_enrichment"]["warnings"], ["from_alphasift_provider"])
         quote_mock.assert_not_called()
@@ -2175,7 +2175,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 return_value={
                     "success": True,
                     "provider": "test",
-                    "results": [{"title": "贵州茅台最新公告", "source": "测试源"}],
+                    "results": [{"title": "贵州茅台最新公�?, "source": "测试�?}],
                 },
             ) as news_mock,
         ):
@@ -2192,7 +2192,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertTrue(candidate["dsa_context"]["news_included"])
         self.assertEqual(candidate["dsa_context"]["quote"]["price"], 1688.0)
         self.assertEqual(candidate["dsa_context"]["fundamentals"]["coverage"]["valuation"], "available")
-        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公告")
+        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公�?)
         quote_mock.assert_not_called()
         fundamentals_mock.assert_not_called()
         news_mock.assert_called_once()
@@ -2226,7 +2226,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             alphasift_enabled=True,
             alphasift_install_spec=DEFAULT_ALPHASIFT_TEST_SPEC,
             litellm_model="gemini/gemini-2.5-flash",
-            litellm_fallback_models=["deepseek/deepseek-chat"],
+            litellm_fallback_models=["deepseek/deepseek-v4-flash"],
             llm_channels=[
                 {
                     "name": "gemini",
@@ -2290,7 +2290,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         runtime_env = captured["env"]
         self.assertIsInstance(runtime_env, dict)
         self.assertEqual(runtime_env["LITELLM_MODEL"], "gemini/gemini-2.5-flash")
-        self.assertEqual(runtime_env["LITELLM_FALLBACK_MODELS"], "deepseek/deepseek-chat")
+        self.assertEqual(runtime_env["LITELLM_FALLBACK_MODELS"], "deepseek/deepseek-v4-flash")
         self.assertEqual(runtime_env["LLM_CHANNELS"], "gemini")
         self.assertEqual(runtime_env["LLM_GEMINI_PROTOCOL"], "gemini")
         self.assertEqual(runtime_env["LLM_GEMINI_API_KEYS"], "dsa-gemini-key")
@@ -2787,7 +2787,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         config = Config(
             alphasift_enabled=True,
             alphasift_install_spec=DEFAULT_ALPHASIFT_TEST_SPEC,
-            litellm_model="deepseek/deepseek-chat",
+            litellm_model="deepseek/deepseek-v4-flash",
             llm_channels=[
                 {
                     "name": "deepseek",
@@ -2795,7 +2795,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                     "enabled": True,
                     "base_url": "https://api.deepseek.example/v1",
                     "api_keys": ["runtime-deepseek-key"],
-                    "models": ["deepseek/deepseek-chat"],
+                    "models": ["deepseek/deepseek-v4-flash"],
                 }
             ],
         )
@@ -2877,7 +2877,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                     "enabled": True,
                     "base_url": "https://api.deepseek.com",
                     "api_keys": ["dsa-deepseek-key"],
-                    "models": ["deepseek/deepseek-chat"],
+                    "models": ["deepseek/deepseek-v4-flash"],
                 },
             ],
             llm_model_list=[
@@ -2889,9 +2889,9 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                     },
                 },
                 {
-                    "model_name": "deepseek/deepseek-chat",
+                    "model_name": "deepseek/deepseek-v4-flash",
                     "litellm_params": {
-                        "model": "deepseek/deepseek-chat",
+                        "model": "deepseek/deepseek-v4-flash",
                         "api_key": "dsa-deepseek-key",
                         "api_base": "https://api.deepseek.com",
                     },
@@ -2917,11 +2917,11 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         runtime_env = captured["env"]
         self.assertIsInstance(runtime_env, dict)
         self.assertEqual(runtime_env["LITELLM_MODEL"], "gemini/gemini-3-flash-preview")
-        self.assertEqual(runtime_env["LITELLM_FALLBACK_MODELS"], "deepseek/deepseek-chat")
+        self.assertEqual(runtime_env["LITELLM_FALLBACK_MODELS"], "deepseek/deepseek-v4-flash")
         self.assertEqual(runtime_env["LLM_CHANNELS"], "gemini,deepseek")
         context = captured["context"]
         self.assertIsInstance(context, dict)
-        self.assertEqual(context["llm"]["fallback_models"], ["deepseek/deepseek-chat"])
+        self.assertEqual(context["llm"]["fallback_models"], ["deepseek/deepseek-v4-flash"])
         self.assertEqual(payload["candidate_count"], 0)
 
     def test_screen_retries_without_context_for_older_adapter_kwargs_wrappers(self) -> None:

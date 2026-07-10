@@ -1279,7 +1279,7 @@ GEMINI_MODEL=gemini-3.1-pro-preview
 OPENAI_API_KEY=xxx
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
-# deepseek-chat / deepseek-reasoner 仍兼容，但官方已标记为 2026/07/24 后废弃
+# deepseek-chat / deepseek-reasoner 已于 2026/07/24 废弃，请使用 deepseek-v4-flash / deepseek-v4-pro
 ```
 
 ### 高级模型路由（底层由 LiteLLM 驱动）

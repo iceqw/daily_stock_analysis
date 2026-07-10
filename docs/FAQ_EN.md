@@ -218,7 +218,7 @@ First confirm whether `LITELLM_CONFIG` or `LLM_CHANNELS` is active, because eith
 OPENAI_API_KEY=sk-xxxxxxxx
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_MODEL=deepseek-v4-flash
-# deepseek-chat / deepseek-reasoner remain compatible, but DeepSeek marks them deprecated after 2026/07/24
+# deepseek-chat / deepseek-reasoner have been deprecated since 2026/07/24, use deepseek-v4-flash / deepseek-v4-pro
 ```
 
 Supported model services:

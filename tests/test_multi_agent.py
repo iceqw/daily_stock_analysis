@@ -57,10 +57,10 @@ class TestExtractStockCode(unittest.TestCase):
         self.assertEqual(_extract_stock_code("分析600519"), "600519")
 
     def test_a_share_chinese_suffix(self):
-        self.assertEqual(_extract_stock_code("600519怎么样"), "600519")
+        self.assertEqual(_extract_stock_code("600519怎么�?), "600519")
 
     def test_a_share_in_sentence(self):
-        self.assertEqual(_extract_stock_code("请帮我看看600519的走势"), "600519")
+        self.assertEqual(_extract_stock_code("请帮我看�?00519的走�?), "600519")
 
     def test_a_share_with_prefix_0(self):
         self.assertEqual(_extract_stock_code("分析000858"), "000858")
@@ -144,8 +144,8 @@ class TestExtractStockCode(unittest.TestCase):
     def test_finance_abbrev_excluded(self):
         for text in [
             "TTM",
-            "市盈率 TTM 怎么看",
-            "PE 怎么看",
+            "市盈�?TTM 怎么�?,
+            "PE 怎么�?,
             "PE TTM",
             "WHAT IS PE",
             "PE IS HIGH",
@@ -160,8 +160,8 @@ class TestExtractStockCode(unittest.TestCase):
                 self.assertEqual(_extract_stock_code(text), "")
 
     def test_finance_abbrev_before_real_ticker(self):
-        self.assertEqual(_extract_stock_code("PE AAPL 怎么看"), "AAPL")
-        self.assertEqual(_extract_stock_code("TTM AAPL 怎么看"), "AAPL")
+        self.assertEqual(_extract_stock_code("PE AAPL 怎么�?), "AAPL")
+        self.assertEqual(_extract_stock_code("TTM AAPL 怎么�?), "AAPL")
         self.assertEqual(_extract_stock_code("WHAT IS PE AAPL"), "AAPL")
 
     # --- Priority: A-share > HK > US ---
@@ -205,7 +205,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_maintain_keeps_current_stock_for_finance_abbrev_followup(self):
         result = resolve_stock_scope(
-            "如果不考虑 TTM 呢",
+            "如果不考虑 TTM �?,
             {"stock_code": "600519", "stock_name": "匿名标的"},
         )
 
@@ -260,7 +260,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_compare_allows_multiple_codes_without_polluting_current_context(self):
         result = resolve_stock_scope(
-            "比较 600519 和 AAPL",
+            "比较 600519 �?AAPL",
             {"stock_code": "600519", "stock_name": "匿名标的"},
         )
 
@@ -271,7 +271,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_compare_allows_plain_five_digit_hk_code(self):
         result = resolve_stock_scope(
-            "比较 01810 和 AAPL",
+            "比较 01810 �?AAPL",
             {"stock_code": "600519", "stock_name": "匿名标的"},
         )
 
@@ -282,9 +282,9 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_compare_hints_allow_multiple_codes_without_switching_context(self):
         cases = [
-            "分析 600519 和 AAPL 的差异",
-            "AAPL 相比 600519 怎么样",
-            "和 AAPL 的差异怎么看",
+            "分析 600519 �?AAPL 的差�?,
+            "AAPL 相比 600519 怎么�?,
+            "�?AAPL 的差异怎么�?,
         ]
 
         for message in cases:
@@ -301,9 +301,9 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_multiple_explicit_codes_are_compare_scope(self):
         cases = [
-            ("AAPL 和 TSLA 哪个更值得买", {"600519", "AAPL", "TSLA"}),
-            ("AAPL 和 TSLA 谁更适合", {"600519", "AAPL", "TSLA"}),
-            ("分析 AAPL 和 TSLA", {"600519", "AAPL", "TSLA"}),
+            ("AAPL �?TSLA 哪个更值得�?, {"600519", "AAPL", "TSLA"}),
+            ("AAPL �?TSLA 谁更适合", {"600519", "AAPL", "TSLA"}),
+            ("分析 AAPL �?TSLA", {"600519", "AAPL", "TSLA"}),
         ]
 
         for message, expected_allowed in cases:
@@ -320,7 +320,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_multiple_lowercase_explicit_codes_are_compare_scope_with_choice_hint(self):
         result = resolve_stock_scope(
-            "aapl 和 tsla 哪个更值得买",
+            "aapl �?tsla 哪个更值得�?,
             {"stock_code": "600519", "stock_name": "匿名标的"},
         )
 
@@ -344,7 +344,7 @@ class TestStockScopeResolution(unittest.TestCase):
             "分析 MA 均线",
             "看看 MA 怎么排列",
             "分析 KDJ 指标",
-            "KDJ 怎么看",
+            "KDJ 怎么�?,
         ]
 
         for message in cases:
@@ -361,7 +361,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_dotted_us_ticker_stays_intact_in_scope_resolution(self):
         result = resolve_stock_scope(
-            "比较 BRK.B 和 AAPL",
+            "比较 BRK.B �?AAPL",
             {"stock_code": "600519", "stock_name": "匿名标的"},
         )
 
@@ -371,7 +371,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_invalid_context_exchange_token_is_not_trusted_as_current_stock(self):
         result = resolve_stock_scope(
-            "继续看",
+            "继续�?,
             {"stock_code": "HK", "stock_name": "港股"},
         )
 
@@ -383,23 +383,23 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_compare_does_not_treat_exchange_affixes_as_standalone_tickers(self):
         cases = [
-            ("比较 01810 和 AAPL", {"600519", "HK01810", "AAPL"}, set()),
-            ("比较 1810.HK 和 AAPL", {"600519", "HK01810", "AAPL"}, {"HK"}),
-            ("比较 0700.HK 和 600519", {"600519", "HK00700"}, {"HK"}),
-            ("比较 600519.SH 和 AAPL", {"600519", "AAPL"}, {"SH"}),
-            ("比较 000001.SZ 和 AAPL", {"600519", "000001", "AAPL"}, {"SZ"}),
-            ("比较 600519.SS 和 AAPL", {"600519", "AAPL"}, {"SS"}),
-            ("比较 1810.hk 和 tsla", {"600519", "HK01810", "TSLA"}, {"HK"}),
-            ("比较 SH600519 和 AAPL", {"600519", "AAPL"}, {"SH"}),
-            ("比较 SZ000001 和 AAPL", {"600519", "000001", "AAPL"}, {"SZ"}),
-            ("比较 BJ920748 和 AAPL", {"600519", "920748", "AAPL"}, {"BJ"}),
-            ("比较 HK01810 和 AAPL", {"600519", "HK01810", "AAPL"}, {"HK"}),
-            ("比较 hk01810 和 tsla", {"600519", "HK01810", "TSLA"}, {"HK"}),
-            ("比较 600519 SH 和 AAPL", {"600519", "AAPL"}, {"SH"}),
-            ("比较 000001 SZ 和 AAPL", {"600519", "000001", "AAPL"}, {"SZ"}),
-            ("比较 920748 BJ 和 AAPL", {"600519", "920748", "AAPL"}, {"BJ"}),
-            ("比较 01810 HK 和 AAPL", {"600519", "HK01810", "AAPL"}, {"HK"}),
-            ("比较 600519 SS 和 AAPL", {"600519", "AAPL"}, {"SS"}),
+            ("比较 01810 �?AAPL", {"600519", "HK01810", "AAPL"}, set()),
+            ("比较 1810.HK �?AAPL", {"600519", "HK01810", "AAPL"}, {"HK"}),
+            ("比较 0700.HK �?600519", {"600519", "HK00700"}, {"HK"}),
+            ("比较 600519.SH �?AAPL", {"600519", "AAPL"}, {"SH"}),
+            ("比较 000001.SZ �?AAPL", {"600519", "000001", "AAPL"}, {"SZ"}),
+            ("比较 600519.SS �?AAPL", {"600519", "AAPL"}, {"SS"}),
+            ("比较 1810.hk �?tsla", {"600519", "HK01810", "TSLA"}, {"HK"}),
+            ("比较 SH600519 �?AAPL", {"600519", "AAPL"}, {"SH"}),
+            ("比较 SZ000001 �?AAPL", {"600519", "000001", "AAPL"}, {"SZ"}),
+            ("比较 BJ920748 �?AAPL", {"600519", "920748", "AAPL"}, {"BJ"}),
+            ("比较 HK01810 �?AAPL", {"600519", "HK01810", "AAPL"}, {"HK"}),
+            ("比较 hk01810 �?tsla", {"600519", "HK01810", "TSLA"}, {"HK"}),
+            ("比较 600519 SH �?AAPL", {"600519", "AAPL"}, {"SH"}),
+            ("比较 000001 SZ �?AAPL", {"600519", "000001", "AAPL"}, {"SZ"}),
+            ("比较 920748 BJ �?AAPL", {"600519", "920748", "AAPL"}, {"BJ"}),
+            ("比较 01810 HK �?AAPL", {"600519", "HK01810", "AAPL"}, {"HK"}),
+            ("比较 600519 SS �?AAPL", {"600519", "AAPL"}, {"SS"}),
         ]
 
         for message, expected_allowed, forbidden_tokens in cases:
@@ -427,7 +427,7 @@ class TestStockScopeResolution(unittest.TestCase):
 
     def test_compare_recognizes_lowercase_us_tickers(self):
         result = resolve_stock_scope(
-            "比较 600519 和 tsla",
+            "比较 600519 �?tsla",
             {"stock_code": "600519", "stock_name": "匿名标的"},
         )
 
@@ -835,7 +835,7 @@ class TestOrchestratorModes(unittest.TestCase):
 
     def test_build_context_extracts_code_from_query(self):
         orch = self._make_orchestrator()
-        ctx = orch._build_context("分析600519的走势")
+        ctx = orch._build_context("分析600519的走�?)
         self.assertEqual(ctx.stock_code, "600519")
 
     def test_fallback_summary(self):
@@ -951,7 +951,7 @@ class TestOrchestratorExecution(unittest.TestCase):
                 agent_name="technical",
                 signal="buy",
                 confidence=0.8,
-                reasoning="技术面结构未出现明显拐点，趋势偏强。",
+                reasoning="技术面结构未出现明显拐点，趋势偏强�?,
                 raw_data={"ma_alignment": "bullish", "trend_score": 82, "volume_status": "normal"},
             ))
             return self._stage_result("technical")
@@ -987,7 +987,7 @@ class TestOrchestratorExecution(unittest.TestCase):
                 agent_name="technical",
                 signal="buy",
                 confidence=0.8,
-                reasoning="技术面结构未出现明显拐点，趋势偏强。",
+                reasoning="技术面结构未出现明显拐点，趋势偏强�?,
                 raw_data={"ma_alignment": "bullish", "trend_score": 82, "volume_status": "normal"},
             ))
             return self._stage_result("technical")
@@ -1000,7 +1000,7 @@ class TestOrchestratorExecution(unittest.TestCase):
                 agent_name="decision",
                 signal="buy",
                 confidence=0.87,
-                reasoning="综合技术与情绪判断，倾向于买入。",
+                reasoning="综合技术与情绪判断，倾向于买入�?,
             ))
             return self._stage_result("decision")
 
@@ -1067,7 +1067,7 @@ class TestOrchestratorExecution(unittest.TestCase):
                     "no_position": "分批布局",
                     "has_position": "继续持有",
                 },
-                "analysis_summary": "趋势仍强，回踩可观察。",
+                "analysis_summary": "趋势仍强，回踩可观察�?,
                 "dashboard": {
                     "key_levels": {
                         "support": 1800,
@@ -1081,7 +1081,7 @@ class TestOrchestratorExecution(unittest.TestCase):
                 agent_name="decision",
                 signal="buy",
                 confidence=0.88,
-                reasoning="趋势仍强，回踩可观察。",
+                reasoning="趋势仍强，回踩可观察�?,
                 raw_data=dashboard,
             ))
             return self._stage_result("decision")
@@ -1103,7 +1103,7 @@ class TestOrchestratorExecution(unittest.TestCase):
 
     def test_execute_pipeline_timeout_after_intel_synthesizes_dashboard(self):
         orch = self._make_orchestrator(config=SimpleNamespace(agent_orchestrator_timeout_s=1, agent_risk_override=True))
-        ctx = AgentContext(query="test", stock_code="301308", stock_name="江波龙")
+        ctx = AgentContext(query="test", stock_code="301308", stock_name="江波�?)
         ctx.set_data("realtime_quote", {"price": 326.17, "volume_ratio": 1.0, "turnover_rate": 6.77})
         ctx.set_data("chip_distribution", {"profit_ratio": 68.8, "avg_cost": 307.67, "concentration_90": 15.28})
 
@@ -1115,7 +1115,7 @@ class TestOrchestratorExecution(unittest.TestCase):
                 agent_name="technical",
                 signal="buy",
                 confidence=0.75,
-                reasoning="强势多头排列，价格回踩 MA5。",
+                reasoning="强势多头排列，价格回�?MA5�?,
                 key_levels={"support": 301.61, "resistance": 340.44, "stop_loss": 295.0},
                 raw_data={"ma_alignment": "bullish", "trend_score": 73, "volume_status": "normal"},
             ))
@@ -1171,7 +1171,7 @@ class TestOrchestratorExecution(unittest.TestCase):
         self.assertEqual(call_kwargs["timeout_seconds"], 180)
 
     def test_run_stage_agent_pipeline_budget_larger_than_agent_limit_clamps_to_agent(self):
-        """Pipeline remaining > sub-agent limit → use smaller agent limit."""
+        """Pipeline remaining > sub-agent limit �?use smaller agent limit."""
         orch = self._make_orchestrator(
             config=self._make_config_with_sub_agent_timeouts(
                 agent_technical_agent_timeout_s=120,
@@ -1187,7 +1187,7 @@ class TestOrchestratorExecution(unittest.TestCase):
         self.assertEqual(call_kwargs["timeout_seconds"], 120)
 
     def test_run_stage_agent_pipeline_budget_smaller_than_agent_limit_uses_pipeline(self):
-        """Pipeline remaining < sub-agent limit → use smaller pipeline remaining."""
+        """Pipeline remaining < sub-agent limit �?use smaller pipeline remaining."""
         orch = self._make_orchestrator(
             config=self._make_config_with_sub_agent_timeouts(
                 agent_technical_agent_timeout_s=300,
@@ -1203,7 +1203,7 @@ class TestOrchestratorExecution(unittest.TestCase):
         self.assertEqual(call_kwargs["timeout_seconds"], 60)
 
     def test_run_stage_agent_no_sub_agent_limit_passes_pipeline_budget_through(self):
-        """No sub-agent limit configured (all 0) → pipeline budget passed through unchanged."""
+        """No sub-agent limit configured (all 0) �?pipeline budget passed through unchanged."""
         orch = self._make_orchestrator(
             config=self._make_config_with_sub_agent_timeouts(),
         )
@@ -1249,7 +1249,7 @@ class TestOrchestratorExecution(unittest.TestCase):
         orch._run_stage_agent(agent, AgentContext(query="test"), timeout_seconds=300)
 
         call_kwargs = agent.run.call_args.kwargs
-        # Exact name "decision" → 150, not skill fallback 90
+        # Exact name "decision" �?150, not skill fallback 90
         self.assertEqual(call_kwargs["timeout_seconds"], 150)
 
     def test_run_wraps_orchestrator_result(self):
@@ -1269,8 +1269,8 @@ class TestOrchestratorExecution(unittest.TestCase):
 
         orch = self._make_orchestrator()
         history = [
-            {"role": "user", "content": "之前的问题"},
-            {"role": "assistant", "content": "之前的回答"},
+            {"role": "user", "content": "之前的问�?},
+            {"role": "assistant", "content": "之前的回�?},
         ]
         captured = {}
 
@@ -1345,7 +1345,7 @@ class TestOrchestratorExecution(unittest.TestCase):
             session_id=session_id,
             run_id="run-existing",
             provider="deepseek",
-            model="deepseek/deepseek-chat",
+            model="deepseek/deepseek-v4-flash",
             anchor_user_message_id=user_id,
             anchor_assistant_message_id=assistant_id,
             messages=[
@@ -1427,7 +1427,7 @@ class TestOrchestratorExecution(unittest.TestCase):
 
     def test_execute_pipeline_chat_prefers_free_form_response(self):
         orch = self._make_orchestrator()
-        ctx = AgentContext(query="请总结一下", stock_code="600519")
+        ctx = AgentContext(query="请总结一�?, stock_code="600519")
         ctx.meta["response_mode"] = "chat"
         decision = MagicMock(agent_name="decision")
 
@@ -1507,14 +1507,14 @@ class TestDecisionAgentChatMode(unittest.TestCase):
         from src.agent.agents.decision_agent import DecisionAgent
 
         agent = DecisionAgent(tool_registry=MagicMock(), llm_adapter=MagicMock())
-        ctx = AgentContext(query="帮我总结一下", stock_code="600519")
+        ctx = AgentContext(query="帮我总结一�?, stock_code="600519")
         ctx.meta["response_mode"] = "chat"
         ctx.add_opinion(AgentOpinion(agent_name="technical", signal="buy", confidence=0.8, reasoning="趋势偏强"))
 
-        opinion = agent.post_process(ctx, "建议继续观察量价配合，分批参与。")
+        opinion = agent.post_process(ctx, "建议继续观察量价配合，分批参与�?)
 
         self.assertIsNotNone(opinion)
-        self.assertEqual(ctx.get_data("final_response_text"), "建议继续观察量价配合，分批参与。")
+        self.assertEqual(ctx.get_data("final_response_text"), "建议继续观察量价配合，分批参与�?)
         self.assertIsNone(ctx.get_data("final_dashboard"))
         self.assertEqual(opinion.signal, "buy")
 
@@ -1539,13 +1539,13 @@ class TestTechnicalAgentSkillPolicy(unittest.TestCase):
         agent = TechnicalAgent(
             tool_registry=MagicMock(),
             llm_adapter=MagicMock(),
-            skill_instructions="### 技能 1: 缠论",
+            skill_instructions="### 技�?1: 缠论",
             technical_skill_policy="",
         )
         prompt = agent.system_prompt(AgentContext(query="分析 600519", stock_code="600519"))
 
         self.assertNotIn("Bias from MA5 < 2%", prompt)
-        self.assertIn("### 技能 1: 缠论", prompt)
+        self.assertIn("### 技�?1: 缠论", prompt)
 
     def test_prompt_includes_legacy_default_policy_for_implicit_default_run(self):
         from src.agent.agents.technical_agent import TechnicalAgent
@@ -1554,13 +1554,13 @@ class TestTechnicalAgentSkillPolicy(unittest.TestCase):
         agent = TechnicalAgent(
             tool_registry=MagicMock(),
             llm_adapter=MagicMock(),
-            skill_instructions="### 技能 1: 默认多头趋势",
+            skill_instructions="### 技�?1: 默认多头趋势",
             technical_skill_policy=TECHNICAL_SKILL_RULES_EN,
         )
         prompt = agent.system_prompt(AgentContext(query="分析 600519", stock_code="600519"))
 
         self.assertIn("Bias from MA5 < 2%", prompt)
-        self.assertIn("### 技能 1: 默认多头趋势", prompt)
+        self.assertIn("### 技�?1: 默认多头趋势", prompt)
 
 
 class TestBaseAgentMessageAssembly(unittest.TestCase):
@@ -1613,7 +1613,7 @@ class TestBaseAgentMessageAssembly(unittest.TestCase):
 
         phase_indexes = [
             idx for idx, message in enumerate(messages)
-            if "市场阶段上下文" in message.get("content", "")
+            if "市场阶段上下�? in message.get("content", "")
         ]
         cached_indexes = [
             idx for idx, message in enumerate(messages)
@@ -2166,7 +2166,7 @@ class TestRiskOverride(unittest.TestCase):
             "sentiment_score": 76,
             "operation_advice": "买入",
             "analysis_summary": "原始结论",
-            "risk_warning": "原风险提示",
+            "risk_warning": "原风险提�?,
             "dashboard": {
                 "core_conclusion": {
                     "one_sentence": "可以参与",
@@ -2197,7 +2197,7 @@ class TestRiskOverride(unittest.TestCase):
             reasoning="重大风险",
             raw_data={"veto_buy": True, "reasoning": "存在重大减持风险"},
         ))
-        ctx.add_risk_flag("insider", "大股东减持", severity="high")
+        ctx.add_risk_flag("insider", "大股东减�?, severity="high")
 
         orch._apply_risk_override(ctx)
         dashboard = ctx.get_data("final_dashboard")
@@ -2227,7 +2227,7 @@ class TestRiskOverride(unittest.TestCase):
             confidence=0.9,
             raw_data={"veto_buy": True, "reasoning": "存在重大风险"},
         ))
-        ctx.add_risk_flag("insider", "大股东减持", severity="high")
+        ctx.add_risk_flag("insider", "大股东减�?, severity="high")
 
         orch._apply_risk_override(ctx)
 
@@ -2251,7 +2251,7 @@ class TestRiskOverride(unittest.TestCase):
             confidence=0.9,
             raw_data={"veto_buy": True},
         ))
-        ctx.add_risk_flag("insider", "大股东减持", severity="high")
+        ctx.add_risk_flag("insider", "大股东减�?, severity="high")
 
         orch._apply_risk_override(ctx)
 
@@ -2278,7 +2278,7 @@ class TestResearchCommandTimeout(unittest.TestCase):
 
         config = SimpleNamespace(
             agent_deep_research_budget=30000,
-            agent_deep_research_timeout=0.01,  # 10ms — will trigger timeout
+            agent_deep_research_timeout=0.01,  # 10ms �?will trigger timeout
             litellm_model="test-model",
             agent_mode=True,
         )

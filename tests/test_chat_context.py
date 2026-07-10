@@ -150,7 +150,7 @@ def test_bundle_drops_trace_on_model_mismatch_budget_and_summarized_anchor() -> 
         session_id=mismatch_session,
         run_id="run-mismatch",
         provider="deepseek",
-        model="deepseek/deepseek-chat",
+        model="deepseek/deepseek-v4-flash",
         anchor_user_message_id=user_id,
         anchor_assistant_message_id=assistant_id,
         messages=[{"role": "assistant", "reasoning_content": "r", "tool_calls": [{"id": "c", "name": "echo", "arguments": {}}]}],
@@ -227,7 +227,7 @@ def test_bundle_injects_trace_for_configured_fallback_model_with_trace_metadata(
         session_id=session_id,
         run_id="run-fallback",
         provider="deepseek",
-        model="deepseek/deepseek-chat",
+        model="deepseek/deepseek-v4-flash",
         anchor_user_message_id=user_id,
         anchor_assistant_message_id=assistant_id,
         messages=[
@@ -248,7 +248,7 @@ def test_bundle_injects_trace_for_configured_fallback_model_with_trace_metadata(
     config = _config(enabled=False)
     config.agent_litellm_model = "openai/test-model"
     config.litellm_model = "openai/test-model"
-    config.litellm_fallback_models = ["deepseek/deepseek-chat"]
+    config.litellm_fallback_models = ["deepseek/deepseek-v4-flash"]
 
     bundle = build_agent_chat_context_bundle(session_id, MagicMock(), config)
 
@@ -257,11 +257,11 @@ def test_bundle_injects_trace_for_configured_fallback_model_with_trace_metadata(
     assert assistant_trace["role"] == "assistant"
     assert assistant_trace["reasoning_content"] == "r"
     assert assistant_trace["_trace_provider"] == "deepseek"
-    assert assistant_trace["_trace_model"] == "deepseek/deepseek-chat"
+    assert assistant_trace["_trace_model"] == "deepseek/deepseek-v4-flash"
     tool_trace = bundle.context_messages[2]
     assert tool_trace["role"] == "tool"
     assert tool_trace["_trace_provider"] == "deepseek"
-    assert tool_trace["_trace_model"] == "deepseek/deepseek-chat"
+    assert tool_trace["_trace_model"] == "deepseek/deepseek-v4-flash"
 
 
 def test_bundle_trace_is_replayed_only_for_matching_fallback_attempt() -> None:
@@ -273,7 +273,7 @@ def test_bundle_trace_is_replayed_only_for_matching_fallback_attempt() -> None:
         session_id=session_id,
         run_id="run-fallback-attempt",
         provider="deepseek",
-        model="deepseek/deepseek-chat",
+        model="deepseek/deepseek-v4-flash",
         anchor_user_message_id=user_id,
         anchor_assistant_message_id=assistant_id,
         messages=[
@@ -294,13 +294,13 @@ def test_bundle_trace_is_replayed_only_for_matching_fallback_attempt() -> None:
     config = _config(enabled=False)
     config.agent_litellm_model = "openai/test-model"
     config.litellm_model = "openai/test-model"
-    config.litellm_fallback_models = ["deepseek/deepseek-chat"]
+    config.litellm_fallback_models = ["deepseek/deepseek-v4-flash"]
     adapter = LLMToolAdapter.__new__(LLMToolAdapter)
     adapter._config = config
 
     bundle = build_agent_chat_context_bundle(session_id, MagicMock(), config)
     primary_messages = adapter._convert_messages(bundle.context_messages, target_model="openai/test-model")
-    fallback_messages = adapter._convert_messages(bundle.context_messages, target_model="deepseek/deepseek-chat")
+    fallback_messages = adapter._convert_messages(bundle.context_messages, target_model="deepseek/deepseek-v4-flash")
 
     assert bundle.diagnostics["trace_injected"] is True
     assert [msg["role"] for msg in primary_messages] == ["user", "assistant"]
@@ -462,7 +462,7 @@ def test_over_trigger_generates_summary_and_updates_covered_message_id() -> None
     )
     adapter = MagicMock()
     adapter.call_text.return_value = SimpleNamespace(
-        content="## 会话摘要\n新摘要",
+        content="## 会话摘要\n新摘�?,
         provider="openai",
         model="openai/test-model",
         usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
@@ -493,7 +493,7 @@ def test_summary_compression_does_not_persist_agent_usage_without_provider_usage
     )
     adapter = MagicMock()
     adapter.call_text.return_value = SimpleNamespace(
-        content="## 会话摘要\n新摘要",
+        content="## 会话摘要\n新摘�?,
         provider="openai",
         model="openai/test-model",
         usage={},
@@ -521,7 +521,7 @@ def test_summary_compression_does_not_persist_metadata_only_provider_usage() -> 
     )
     adapter = MagicMock()
     adapter.call_text.return_value = SimpleNamespace(
-        content="## 会话摘要\n新摘要",
+        content="## 会话摘要\n新摘�?,
         provider="openai",
         model="openai/test-model",
         usage=normalize_litellm_usage(
@@ -553,7 +553,7 @@ def test_summary_compression_persists_invalid_provider_usage_diagnostics() -> No
     usage = normalize_litellm_usage({"prompt_tokens": -1}, model="openai/gpt-4o")
     adapter = MagicMock()
     adapter.call_text.return_value = SimpleNamespace(
-        content="## 会话摘要\n新摘要",
+        content="## 会话摘要\n新摘�?,
         provider="openai",
         model="openai/test-model",
         usage=usage,
@@ -583,7 +583,7 @@ def test_summary_compression_persists_agent_usage_with_provider_usage() -> None:
     usage = {"total_tokens": 3}
     adapter = MagicMock()
     adapter.call_text.return_value = SimpleNamespace(
-        content="## 会话摘要\n新摘要",
+        content="## 会话摘要\n新摘�?,
         provider="openai",
         model="openai/test-model",
         usage=usage,

@@ -939,9 +939,10 @@ class Config:
     notification_alert_channels: List[str] = field(default_factory=list)
     notification_system_error_channels: List[str] = field(default_factory=list)
 
-    # 通知降噪机制（Issue #1200 P4）：默认全部关闭，仅对静态通知渠道生效
-    notification_dedup_ttl_seconds: int = 0
-    notification_cooldown_seconds: int = 0
+    # 通知降噪机制（Issue #1200 P4）：对静态通知渠道生效
+    # dedup_ttl: 相同内容 1 小时内不重复发送；cooldown: 同 key 10 分钟内不重复发送
+    notification_dedup_ttl_seconds: int = 3600
+    notification_cooldown_seconds: int = 600
     notification_quiet_hours: str = ""
     notification_timezone: str = ""
     notification_min_severity: str = ""
@@ -1338,7 +1339,6 @@ class Config:
         # the higher-priority sources and Hermes blocking issues are known.
         litellm_model_explicit = os.getenv('LITELLM_MODEL', '').strip()
         litellm_model = litellm_model_explicit
-        inferred_legacy_deepseek_model = False
         _openai_model_env = os.getenv('OPENAI_MODEL', '').strip()
         if using_anspire_llm_legacy:
             _openai_model_name = _anspire_llm_model_env or _openai_model_env or ANSPIRE_LLM_MODEL_DEFAULT
@@ -1419,8 +1419,7 @@ class Config:
                 elif anthropic_api_keys:
                     litellm_model = f'anthropic/{_anthropic_model_name}'
                 elif deepseek_api_keys:
-                    litellm_model = 'deepseek/deepseek-chat'
-                    inferred_legacy_deepseek_model = True
+                    litellm_model = 'deepseek/deepseek-v4-flash'
                 elif openai_api_keys:
                     # For openai-compatible models, add prefix only if not already prefixed
                     if '/' not in _openai_model_name:
@@ -1436,14 +1435,14 @@ class Config:
                     litellm_fallback_models = [_fb]
 
         if (
-            inferred_legacy_deepseek_model
-            and llm_models_source == "legacy_env"
-            and litellm_model == 'deepseek/deepseek-chat'
+            litellm_model in ('deepseek/deepseek-chat', 'deepseek/deepseek-reasoner')
         ):
             logger.warning(
                 "Deprecation warning:\n"
-                "deepseek-chat will be deprecated on 2026-07-24,\n"
-                "please migrate to deepseek-v4-flash."
+                f"{litellm_model} will be deprecated on 2026-07-24,\n"
+                "please migrate to deepseek-v4-flash or deepseek-v4-pro.\n"
+                "The default has already been updated to deepseek/deepseek-v4-flash;\n"
+                "remove LITELLM_MODEL from .env to use the new default."
             )
 
         generation_backend = (
@@ -1879,13 +1878,13 @@ class Config:
             ),
             notification_dedup_ttl_seconds=parse_env_int(
                 os.getenv('NOTIFICATION_DEDUP_TTL_SECONDS'),
-                0,
+                3600,
                 field_name='NOTIFICATION_DEDUP_TTL_SECONDS',
                 minimum=0,
             ),
             notification_cooldown_seconds=parse_env_int(
                 os.getenv('NOTIFICATION_COOLDOWN_SECONDS'),
-                0,
+                600,
                 field_name='NOTIFICATION_COOLDOWN_SECONDS',
                 minimum=0,
             ),

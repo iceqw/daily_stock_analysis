@@ -56,7 +56,7 @@ def _diagnostic_snapshot() -> dict:
         "llm_runs": [
             {
                 "trace_id": "trace-p2",
-                "model": "deepseek-chat",
+                "model": "deepseek-v4-flash",
                 "call_type": "analysis",
                 "success": True,
                 "tokens": 1234,
@@ -91,7 +91,7 @@ def _history_record(*, context_snapshot: dict | None) -> SimpleNamespace:
         raw_result=json.dumps(
             {
                 "success": True,
-                "model_used": "deepseek-chat",
+                "model_used": "deepseek-v4-flash",
                 "analysis_summary": "测试摘要",
                 "news_summary": "新闻摘要",
             },
@@ -189,9 +189,9 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
             },
             raw_result={
                 "success": True,
-                "model_used": "deepseek-chat",
+                "model_used": "deepseek-v4-flash",
                 "analysis_summary": "测试摘要",
-                "news_summary": "模型生成的新闻摘要",
+                "news_summary": "模型生成的新闻摘�?,
             },
             report_saved=True,
         )
@@ -205,13 +205,13 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         summary = build_run_diagnostic_summary(
             context_snapshot={
                 "diagnostics": diagnostics,
-                "news_content": "模型生成的新闻摘要",
+                "news_content": "模型生成的新闻摘�?,
             },
             raw_result={
                 "success": True,
-                "model_used": "deepseek-chat",
+                "model_used": "deepseek-v4-flash",
                 "analysis_summary": "测试摘要",
-                "news_summary": "模型生成的新闻摘要",
+                "news_summary": "模型生成的新闻摘�?,
             },
             report_saved=True,
         )
@@ -224,14 +224,14 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         summary = build_run_diagnostic_summary(
             context_snapshot={
                 "diagnostics": diagnostics,
-                "news_content": "【贵州茅台 情报搜索结果】\n  未找到相关信息",
+                "news_content": "【贵州茅�?情报搜索结果】\n  未找到相关信�?,
                 "news_result_count": 0,
             },
             raw_result={
                 "success": True,
-                "model_used": "deepseek-chat",
+                "model_used": "deepseek-v4-flash",
                 "analysis_summary": "测试摘要",
-                "news_summary": "模型生成的新闻摘要",
+                "news_summary": "模型生成的新闻摘�?,
             },
             report_saved=True,
         )
@@ -247,7 +247,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
             },
             raw_result={
                 "success": True,
-                "model_used": "deepseek-chat",
+                "model_used": "deepseek-v4-flash",
                 "analysis_summary": "测试摘要",
             },
             report_saved=True,
@@ -279,14 +279,14 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
                     ]
                 ),
             },
-            raw_result={"success": True, "model_used": "deepseek-chat"},
+            raw_result={"success": True, "model_used": "deepseek-v4-flash"},
             report_saved=True,
         )
 
         daily = summary["components"]["daily_data"]
         self.assertEqual(summary["status"], "degraded")
         self.assertEqual(daily["status"], "degraded")
-        self.assertIn("未进入本次分析输入", daily["message"])
+        self.assertIn("未进入本次分析输�?, daily["message"])
         self.assertEqual(daily["details"]["analysis_input_status"], "missing")
         self.assertEqual(
             daily["details"]["analysis_input_missing_reasons"],
@@ -310,14 +310,14 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
                     ]
                 ),
             },
-            raw_result={"success": True, "model_used": "deepseek-chat"},
+            raw_result={"success": True, "model_used": "deepseek-v4-flash"},
             report_saved=True,
         )
 
         news = summary["components"]["news"]
         self.assertEqual(news["status"], "unknown")
-        self.assertIn("未进入本次分析输入", news["message"])
-        self.assertIn("后续检索", news["message"])
+        self.assertIn("未进入本次分析输�?, news["message"])
+        self.assertIn("后续检�?, news["message"])
         self.assertEqual(news["details"]["analysis_input_status"], "missing")
 
     def test_news_results_with_missing_analysis_input_are_degraded(self) -> None:
@@ -338,7 +338,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
                     ]
                 ),
             },
-            raw_result={"success": True, "model_used": "deepseek-chat"},
+            raw_result={"success": True, "model_used": "deepseek-v4-flash"},
             report_saved=True,
         )
 
@@ -348,15 +348,15 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         self.assertEqual(news["details"]["record_count"], 3)
         self.assertEqual(news["details"]["analysis_input_status"], "missing")
         self.assertEqual(news["details"]["evidence_scope"], "retrieval_vs_analysis_input")
-        self.assertIn("新闻检索返回 3 条结果", news["message"])
-        self.assertIn("未进入本次分析输入", news["message"])
+        self.assertIn("新闻检索返�?3 条结�?, news["message"])
+        self.assertIn("未进入本次分析输�?, news["message"])
 
     def test_summary_marks_llm_failure_as_failed(self) -> None:
         diagnostics = _diagnostic_snapshot()
         diagnostics["llm_runs"] = [
             {
                 "trace_id": "trace-p2",
-                "model": "deepseek-chat",
+                "model": "deepseek-v4-flash",
                 "success": False,
                 "error_type": "RuntimeError",
                 "error_message_sanitized": "api_key=<redacted>",
@@ -382,7 +382,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         diagnostics["llm_runs"] = [
             {
                 "trace_id": "trace-p2",
-                "model": "deepseek-chat",
+                "model": "deepseek-v4-flash",
                 "success": False,
                 "error_type": "Unauthorized",
                 "error_message_sanitized": (
@@ -414,7 +414,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         diagnostics["llm_runs"] = [
             {
                 "trace_id": "trace-p2",
-                "model": "deepseek-chat",
+                "model": "deepseek-v4-flash",
                 "success": False,
                 "error_type": "ProxyError",
                 "error_message_sanitized": (
@@ -484,7 +484,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
     def test_legacy_report_without_diagnostics_returns_unknown(self) -> None:
         summary = build_run_diagnostic_summary(
             context_snapshot={"news_content": "legacy news"},
-            raw_result={"success": True, "model_used": "deepseek-chat"},
+            raw_result={"success": True, "model_used": "deepseek-v4-flash"},
             report_saved=True,
             query_id="legacy-query",
             stock_code="600519",
