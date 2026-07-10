@@ -9,9 +9,11 @@ API v1 Endpoints 模块初始化
 """
 
 from api.v1.endpoints import (
+    ai_opinions,
     health,
     analysis,
     history,
+    investment_journals,
     stocks,
     backtest,
     system_config,
@@ -24,9 +26,11 @@ from api.v1.endpoints import (
     alphasift,
 )
 __all__ = [
+    "ai_opinions",
     "health",
     "analysis",
     "history",
+    "investment_journals",
     "stocks",
     "backtest",
     "system_config",
