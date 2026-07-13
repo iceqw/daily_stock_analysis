@@ -143,6 +143,8 @@ class InvestmentJournalStorageMigrationTestCase(unittest.TestCase):
             self.assertIn("structured_version", journal_columns)
             self.assertIn("structured_at", journal_columns)
             self.assertIn("structured_error", journal_columns)
+            self.assertIn("structuring_attempt", journal_columns)
+            self.assertIn("structuring_requested_at", journal_columns)
 
             journal_row = conn.execute(
                 """

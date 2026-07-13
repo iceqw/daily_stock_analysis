@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import ModuleType
 
 if "dotenv" not in sys.modules:
@@ -94,6 +94,43 @@ class InvestmentJournalRepositoryTestCase(unittest.TestCase):
         self.assertEqual(updated.summary_snapshot, "new summary")
         self.assertIsNotNone(updated.structured_output_json)
         self.assertEqual(updated.ai_processing_status, "completed")
+
+    def test_stale_structuring_is_marked_failed(self) -> None:
+        row = self.repo.create(
+            {
+                "stock_code": "AAPL",
+                "market": "us",
+                "entry_type": "manual",
+                "raw_content": "stale note",
+                "ai_processing_status": "processing",
+                "structuring_attempt": 1,
+                "structuring_requested_at": datetime.utcnow() - timedelta(seconds=301),
+            }
+        )
+
+        self.assertEqual(self.repo.fail_stale_structuring(timeout_seconds=300), 1)
+        refreshed = self.repo.get(row.id)
+        self.assertEqual(refreshed.ai_processing_status, "failed")
+        self.assertEqual(refreshed.structured_error, "structuring_timeout")
+
+    def test_superseded_attempt_cannot_complete(self) -> None:
+        row = self.repo.create(
+            {
+                "stock_code": "AAPL",
+                "market": "us",
+                "entry_type": "manual",
+                "raw_content": "retry note",
+                "ai_processing_status": "pending",
+            }
+        )
+        first = self.repo.reset_structuring(row.id)
+        second = self.repo.reset_structuring(row.id)
+
+        with self.assertRaises(Exception):
+            self.repo.mark_processing(row.id, attempt=first.structuring_attempt)
+
+        processing = self.repo.mark_processing(row.id, attempt=second.structuring_attempt)
+        self.assertEqual(processing.structuring_attempt, second.structuring_attempt)
 
 
 if __name__ == "__main__":
