@@ -401,12 +401,23 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
         _mock_parse_yaml,
         _mock_setup_env,
     ) -> None:
-        env = {
-            "RUN_IMMEDIATELY": "false",
-        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text("RUN_IMMEDIATELY=false\n", encoding="utf-8")
 
-        with patch.dict(os.environ, env, clear=True):
-            config = Config._load_from_env()
+            with patch.dict(
+                os.environ,
+                {
+                    "ENV_FILE": str(env_path),
+                    "RUN_IMMEDIATELY": "false",
+                },
+                clear=True,
+            ):
+                Config.reset_instance()
+                try:
+                    config = Config._load_from_env()
+                finally:
+                    Config.reset_instance()
 
         self.assertFalse(config.schedule_run_immediately)
         self.assertFalse(config.run_immediately)
