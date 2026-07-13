@@ -22,7 +22,8 @@ class TestStorage(unittest.TestCase):
 
     @staticmethod
     def _list_sqlite_unique_indexes(db_path: str, table_name: str) -> dict[str, list[str]]:
-        with sqlite3.connect(db_path) as conn:
+        conn = sqlite3.connect(db_path)
+        try:
             rows = conn.execute(f"PRAGMA index_list({table_name})").fetchall()
             unique_indexes = {}
             for row in rows:
@@ -36,13 +37,16 @@ class TestStorage(unittest.TestCase):
                         index_columns.append(column_name)
                 unique_indexes[index_name] = index_columns
             return unique_indexes
+        finally:
+            conn.close()
 
     def test_legacy_intelligence_items_url_unique_index_rebuilds_without_collision(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         db_path = os.path.join(temp_dir.name, "legacy_intel.sqlite")
 
         try:
-            with sqlite3.connect(db_path) as conn:
+            conn = sqlite3.connect(db_path)
+            try:
                 conn.execute(
                     """CREATE TABLE intelligence_sources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,6 +110,9 @@ class TestStorage(unittest.TestCase):
                          '2026-01-02 00:00:00', '2026-01-02 00:00:00', 'market', None, 'cn', None),
                     ],
                 )
+                conn.commit()
+            finally:
+                conn.close()
 
             unique_indexes_before = self._list_sqlite_unique_indexes(db_path, "intelligence_items")
             self.assertIn("uix_intelligence_item_url_legacy", unique_indexes_before)
@@ -122,11 +129,14 @@ class TestStorage(unittest.TestCase):
                 unique_indexes_after["uix_intel_item_scope"],
                 ["source_id", "url", "scope_type", "scope_value", "market"],
             )
-            with sqlite3.connect(db_path) as conn:
+            conn = sqlite3.connect(db_path)
+            try:
                 table_count = conn.execute("SELECT COUNT(*) FROM intelligence_items").fetchone()[0]
                 temp_tables = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'intelligence_items_recreate_tmp_%'"
                 ).fetchall()
+            finally:
+                conn.close()
 
             self.assertEqual(table_count, 2)
             self.assertEqual(temp_tables, [])
@@ -817,8 +827,8 @@ class TestStorage(unittest.TestCase):
 
             self.assertEqual(total, 1)
         finally:
-            temp_dir.cleanup()
             DatabaseManager.reset_instance()
+            temp_dir.cleanup()
 
 if __name__ == '__main__':
     unittest.main()
