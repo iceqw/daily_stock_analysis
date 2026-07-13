@@ -24,6 +24,7 @@ AI_OPINION_GENERATION_STATUSES = frozenset({
     "rejected",
 })
 AI_OPINION_SOURCE_STATUSES = frozenset({"available", "deleted"})
+AI_OPINION_FEEDBACK_VALUES = frozenset({"useful", "not_useful"})
 
 
 class AIOpinionNotFoundError(ValueError):
@@ -148,6 +149,32 @@ class AIOpinionService:
 
     def get_opinion(self, opinion_id: Any) -> Dict[str, Any]:
         row = self.repo.get(int(opinion_id))
+        if row is None:
+            raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
+        analysis_history_available = (
+            row.analysis_history_id is not None
+            and self.db.get_analysis_history_by_id(int(row.analysis_history_id)) is not None
+        )
+        return self._serialize(row, analysis_history_available=analysis_history_available)
+
+    def update_feedback(
+        self,
+        opinion_id: Any,
+        *,
+        feedback_value: Any,
+        feedback_note: Any = None,
+    ) -> Dict[str, Any]:
+        normalized_value = str(feedback_value or "").strip().lower()
+        if normalized_value not in AI_OPINION_FEEDBACK_VALUES:
+            raise ValueError("feedback_value must be useful or not_useful")
+        note = self._normalize_optional_text(feedback_note)
+        if note and len(note) > 1000:
+            raise ValueError("feedback_note must be at most 1000 characters")
+        row = self.repo.update_feedback(
+            int(opinion_id),
+            feedback_value=normalized_value,
+            feedback_note=note,
+        )
         if row is None:
             raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
         analysis_history_available = (

@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from api.v1.schemas.ai_opinions import (
+    AIOpinionFeedbackRequest,
     AIOpinionGenerateAccepted,
     AIOpinionItem,
     AIOpinionListResponse,
@@ -117,6 +118,27 @@ def get_ai_opinion(opinion_id: int) -> AIOpinionItem:
         raise _not_found(exc)
     except Exception as exc:
         raise _internal_error("Get AI opinion failed", exc)
+
+
+@router.put(
+    "/{opinion_id}/feedback",
+    response_model=AIOpinionItem,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Store user feedback for one AI opinion",
+)
+def update_ai_opinion_feedback(
+    opinion_id: int,
+    request: AIOpinionFeedbackRequest,
+) -> AIOpinionItem:
+    service = AIOpinionService()
+    try:
+        return AIOpinionItem(**service.update_feedback(opinion_id, **request.model_dump()))
+    except AIOpinionNotFoundError as exc:
+        raise _not_found(exc)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Update AI opinion feedback failed", exc)
 
 
 @router.post(

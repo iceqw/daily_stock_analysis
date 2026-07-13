@@ -51,6 +51,8 @@ class InvestmentJournalEntryItem(BaseModel):
     structured_version: Optional[str] = None
     structured_at: Optional[str] = None
     structured_error: Optional[str] = None
+    structuring_attempt: int = 0
+    structuring_requested_at: Optional[str] = None
     analysis_history: Optional[JournalAnalysisHistoryRef] = None
     analysis_history_available: bool
     current_ai_opinion: Optional[JournalCurrentAIOpinionRef] = None

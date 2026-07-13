@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 OpinionGenerationStatus = Literal["pending", "generating", "completed", "failed", "rejected"]
 OpinionSourceStatus = Literal["available", "deleted"]
+OpinionFeedbackValue = Literal["useful", "not_useful"]
 
 
 class AIOpinionGenerateAccepted(BaseModel):
@@ -65,3 +66,8 @@ class AIOpinionListResponse(BaseModel):
     total: int
     page: int = 1
     page_size: int = 50
+
+
+class AIOpinionFeedbackRequest(BaseModel):
+    feedback_value: OpinionFeedbackValue
+    feedback_note: Optional[str] = Field(default=None, max_length=1000)

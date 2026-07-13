@@ -58,7 +58,8 @@ class InvestmentJournalStructuringService:
         if row.entry_type != "manual":
             raise InvestmentJournalMutationConflictError("only manual journal entries can be structured")
 
-        self.repo.mark_processing(int(entry_id))
+        attempt = int(row.structuring_attempt or 0)
+        self.repo.mark_processing(int(entry_id), attempt=attempt)
         try:
             context = self.context_builder.build(int(entry_id))
             prompts = load_prompt(self.PROMPT_NAME, self.PROMPT_VERSION)
@@ -90,6 +91,7 @@ class InvestmentJournalStructuringService:
                 prompt_version=f"{self.PROMPT_NAME}-{self.PROMPT_VERSION}",
                 structured_version=self.STRUCTURED_VERSION,
                 structured_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                attempt=attempt,
             )
             if completed is None:
                 raise RuntimeError("investment_journal_completion_persist_failed")
@@ -97,8 +99,8 @@ class InvestmentJournalStructuringService:
         except (InvestmentJournalStateTransitionError, InvestmentJournalMutationConflictError):
             raise
         except (InvestmentJournalSafetyError, InvestmentJournalSchemaError) as exc:
-            self.repo.mark_failed(int(entry_id), error_message=str(exc))
+            self.repo.mark_failed(int(entry_id), error_message=str(exc), attempt=attempt)
             raise
         except Exception as exc:
-            self.repo.mark_failed(int(entry_id), error_message=str(exc)[:500])
+            self.repo.mark_failed(int(entry_id), error_message=str(exc)[:500], attempt=attempt)
             raise

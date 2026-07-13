@@ -149,23 +149,27 @@ def create_manual_investment_journal_entry(
 
 @router.patch(
     "/manual/{entry_id}",
-    response_model=InvestmentJournalEntryItem,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=InvestmentJournalStructuringAccepted,
     responses={
         400: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
-    summary="Update a manual investment note",
+    summary="Update a manual investment note and accept AI structuring",
 )
 def update_manual_investment_journal_entry(
     entry_id: int,
     request: ManualJournalEntryUpdateRequest,
-) -> InvestmentJournalEntryItem:
+) -> InvestmentJournalStructuringAccepted:
     service = InvestmentJournalService()
     try:
-        return InvestmentJournalEntryItem(
-            **service.update_manual_entry(entry_id, **request.model_dump(exclude_unset=True))
+        updated = service.update_manual_entry(entry_id, **request.model_dump(exclude_unset=True))
+        pending = service.create_pending_structuring(int(updated["id"]))
+        return _submit_structuring_task(
+            pending,
+            message="Investment journal restructuring task accepted",
         )
     except InvestmentJournalNotFoundError as exc:
         raise _not_found(exc)

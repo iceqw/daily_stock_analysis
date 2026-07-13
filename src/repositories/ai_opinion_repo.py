@@ -275,6 +275,34 @@ class AIOpinionRepository:
             increment_retry=retry_count is None,
         )
 
+    def update_feedback(
+        self,
+        opinion_id: int,
+        *,
+        feedback_value: str,
+        feedback_note: Optional[str],
+    ) -> Optional[AIOpinionRecord]:
+        def write_operation(session):
+            row = session.execute(
+                select(AIOpinionRecord).where(AIOpinionRecord.id == int(opinion_id)).limit(1)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            now_value = utc_naive_now()
+            row.feedback_value = feedback_value
+            row.feedback_note = feedback_note
+            row.feedback_updated_at = now_value
+            row.updated_at = now_value
+            session.flush()
+            session.refresh(row)
+            session.expunge(row)
+            return row
+
+        return self.db._run_write_transaction(
+            f"update_ai_opinion_feedback[{int(opinion_id)}]",
+            write_operation,
+        )
+
     def mark_rejected(
         self,
         opinion_id: int,

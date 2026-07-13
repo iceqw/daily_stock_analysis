@@ -164,8 +164,12 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
             f"/api/v1/investment-journals/manual/{manual_item['id']}",
             json={"raw_content": "updated manual note"},
         )
-        self.assertEqual(patch_resp.status_code, 200, patch_resp.text)
-        self.assertEqual(patch_resp.json()["raw_content"], "updated manual note")
+        self.assertEqual(patch_resp.status_code, 202, patch_resp.text)
+        update_accepted = patch_resp.json()
+        self.assertTrue(update_accepted["accepted"])
+        self.assertIn("task_id", update_accepted)
+        self.assertEqual(update_accepted["entry"]["raw_content"], "updated manual note")
+        self.assertEqual(update_accepted["entry"]["ai_processing_status"], "pending")
 
     def test_journal_api_rejects_invalid_manual_mutation_targets(self) -> None:
         history_id = self._seed_history()
@@ -278,6 +282,25 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
         payload = list_resp.json()
         self.assertEqual(payload["total"], 1)
         self.assertEqual(payload["items"][0]["analysis_history_id"], history_id)
+
+    def test_ai_opinion_api_stores_feedback_with_optional_note(self) -> None:
+        history_id = self._seed_history(code="AAPL")
+        opinion = AIOpinionService(db_manager=self.db).create_opinion(
+            analysis_history_id=history_id,
+            content="AAPL recap",
+            conclusion="AAPL conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "AAPL"},
+        )
+
+        response = self.client.put(
+            f"/api/v1/ai-opinions/{opinion['id']}/feedback",
+            json={"feedback_value": "useful", "feedback_note": "Useful risk framing."},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["feedback_value"], "useful")
+        self.assertEqual(response.json()["feedback_note"], "Useful risk framing.")
+        self.assertTrue(response.json()["feedback_updated_at"])
 
     def test_ai_opinion_api_paginates_stock_history(self) -> None:
         history_ids = [self._seed_history(code="AAPL") for _ in range(3)]

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import List, Optional, Tuple
 
 from sqlalchemy import desc, func, select
@@ -130,7 +131,7 @@ class InvestmentJournalRepository:
             session.refresh(row)
             return row
 
-    def mark_processing(self, entry_id: int) -> Optional[InvestmentJournalEntry]:
+    def mark_processing(self, entry_id: int, *, attempt: int) -> Optional[InvestmentJournalEntry]:
         def write_operation(session):
             row = session.execute(
                 select(InvestmentJournalEntry).where(InvestmentJournalEntry.id == int(entry_id)).limit(1)
@@ -140,7 +141,7 @@ class InvestmentJournalRepository:
             if row.entry_type != "manual":
                 raise InvestmentJournalMutationConflictError("only manual journal entries can be structured")
             current_status = self.normalize_processing_status(row.ai_processing_status)
-            if current_status != "pending":
+            if current_status != "pending" or int(row.structuring_attempt or 0) != int(attempt):
                 raise InvestmentJournalStateTransitionError(
                     f"journal_status_not_pending:{current_status}"
                 )
@@ -168,6 +169,7 @@ class InvestmentJournalRepository:
         prompt_version: Optional[str],
         structured_version: Optional[str],
         structured_at,
+        attempt: int,
     ) -> Optional[InvestmentJournalEntry]:
         def write_operation(session):
             row = session.execute(
@@ -176,7 +178,7 @@ class InvestmentJournalRepository:
             if row is None:
                 return None
             current_status = self.normalize_processing_status(row.ai_processing_status)
-            if current_status != "processing":
+            if current_status != "processing" or int(row.structuring_attempt or 0) != int(attempt):
                 raise InvestmentJournalStateTransitionError(
                     f"journal_status_not_processing:{current_status}"
                 )
@@ -200,7 +202,7 @@ class InvestmentJournalRepository:
             write_operation,
         )
 
-    def mark_failed(self, entry_id: int, *, error_message: str) -> Optional[InvestmentJournalEntry]:
+    def mark_failed(self, entry_id: int, *, error_message: str, attempt: Optional[int] = None) -> Optional[InvestmentJournalEntry]:
         def write_operation(session):
             row = session.execute(
                 select(InvestmentJournalEntry).where(InvestmentJournalEntry.id == int(entry_id)).limit(1)
@@ -208,6 +210,8 @@ class InvestmentJournalRepository:
             if row is None:
                 return None
             current_status = self.normalize_processing_status(row.ai_processing_status)
+            if attempt is not None and int(row.structuring_attempt or 0) != int(attempt):
+                raise InvestmentJournalStateTransitionError("journal_attempt_superseded")
             if current_status not in {"pending", "processing"}:
                 raise InvestmentJournalStateTransitionError(
                     f"journal_status_not_mutable:{current_status}"
@@ -224,6 +228,24 @@ class InvestmentJournalRepository:
             f"mark_journal_failed[{int(entry_id)}]",
             write_operation,
         )
+
+    def fail_stale_structuring(self, *, timeout_seconds: int) -> int:
+        cutoff = utc_naive_now() - timedelta(seconds=max(1, int(timeout_seconds)))
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(InvestmentJournalEntry).where(
+                    InvestmentJournalEntry.entry_type == "manual",
+                    InvestmentJournalEntry.ai_processing_status.in_(("pending", "processing")),
+                    InvestmentJournalEntry.structuring_requested_at.is_not(None),
+                    InvestmentJournalEntry.structuring_requested_at <= cutoff,
+                )
+            ).scalars().all()
+            for row in rows:
+                row.ai_processing_status = "failed"
+                row.structured_error = "structuring_timeout"
+                row.updated_at = utc_naive_now()
+            session.commit()
+            return len(rows)
 
     def list_by_stock(
         self,
@@ -274,3 +296,5 @@ class InvestmentJournalRepository:
         row.structured_version = None
         row.structured_at = None
         row.structured_error = None
+        row.structuring_attempt = int(row.structuring_attempt or 0) + 1
+        row.structuring_requested_at = utc_naive_now()

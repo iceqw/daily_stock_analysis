@@ -439,6 +439,8 @@ class InvestmentJournalEntry(Base):
     structured_version = Column(String(64))
     structured_at = Column(DateTime, index=True)
     structured_error = Column(Text)
+    structuring_attempt = Column(Integer, nullable=False, default=0)
+    structuring_requested_at = Column(DateTime, index=True)
     created_at = Column(DateTime, default=utc_naive_now, index=True)
     updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
 
@@ -1667,6 +1669,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             "structured_version": "ALTER TABLE investment_journal_entries ADD COLUMN structured_version VARCHAR(64)",
             "structured_at": "ALTER TABLE investment_journal_entries ADD COLUMN structured_at DATETIME",
             "structured_error": "ALTER TABLE investment_journal_entries ADD COLUMN structured_error TEXT",
+            "structuring_attempt": "ALTER TABLE investment_journal_entries ADD COLUMN structuring_attempt INTEGER NOT NULL DEFAULT 0",
+            "structuring_requested_at": "ALTER TABLE investment_journal_entries ADD COLUMN structuring_requested_at DATETIME",
         }
         with self._engine.begin() as connection:
             for column_name, ddl in additions.items():
