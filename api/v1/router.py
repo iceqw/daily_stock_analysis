@@ -24,6 +24,7 @@ from api.v1.endpoints import (
     history,
     intelligence,
     investment_journals,
+    investment_principles,
     portfolio,
     stocks,
     system_config,
@@ -62,6 +63,12 @@ router.include_router(
     investment_journals.router,
     prefix="/investment-journals",
     tags=["InvestmentJournals"]
+)
+
+router.include_router(
+    investment_principles.router,
+    prefix="/investment-principles",
+    tags=["InvestmentPrinciples"]
 )
 
 router.include_router(

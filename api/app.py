@@ -172,6 +172,7 @@ from src.services.stock_index_remote_service import (
     refresh_remote_stock_index_cache,
     settings_from_config,
 )
+from src.storage import DatabaseManager
 
 
 _STOCK_INDEX_FILENAME = "stocks.index.json"
@@ -294,7 +295,7 @@ async def app_lifespan(app: FastAPI):
             delattr(app.state, "runtime_scheduler_service")
 
 
-def create_app(static_dir: Optional[Path] = None) -> FastAPI:
+def create_app(static_dir: Optional[Path] = None, db_manager: Optional[DatabaseManager] = None) -> FastAPI:
     """
     创建并配置 FastAPI 应用实例
     
@@ -326,6 +327,9 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
         version="1.0.0",
         lifespan=app_lifespan,
     )
+    # API dependencies may provide an isolated manager for tests or embedding.
+    # Existing callers keep the production singleton behavior when omitted.
+    app.state.database_manager = db_manager
     
     # ============================================================
     # CORS 配置

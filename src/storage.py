@@ -28,6 +28,7 @@ from sqlalchemy import (
     String,
     Float,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Integer,
@@ -61,7 +62,7 @@ from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-CURRENT_SCHEMA_VERSION = "2026-06-05-create-all-baseline"
+CURRENT_SCHEMA_VERSION = "2026-07-13-investment-principles-m1"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
@@ -444,6 +445,120 @@ class InvestmentJournalEntry(Base):
     __table_args__ = (
         Index('ix_investment_journal_stock_market_time', 'stock_code', 'market', 'created_at'),
         Index('ix_investment_journal_market_type_time', 'market', 'entry_type', 'created_at'),
+    )
+
+
+class InvestmentPrinciple(Base):
+    """Stable identity and lifecycle state for one investment principle."""
+
+    __tablename__ = 'investment_principles'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(String(16), nullable=False, default='draft', index=True)
+    current_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+    status_changed_at = Column(DateTime, nullable=False, default=utc_naive_now, index=True)
+    activated_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'active', 'archived', 'rejected')",
+            name='ck_investment_principle_status',
+        ),
+        CheckConstraint('current_version >= 1', name='ck_investment_principle_current_version'),
+        Index('ix_investment_principle_status_updated', 'status', 'updated_at'),
+    )
+
+
+class InvestmentPrincipleVersion(Base):
+    """Immutable, versioned content for an investment principle."""
+
+    __tablename__ = 'investment_principle_versions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    principle_id = Column(
+        Integer,
+        ForeignKey('investment_principles.id', ondelete='RESTRICT'),
+        nullable=False,
+        index=True,
+    )
+    version = Column(Integer, nullable=False)
+    title = Column(String(200), nullable=False)
+    statement = Column(Text, nullable=False)
+    rationale = Column(Text)
+    category = Column(String(64), nullable=False)
+    severity = Column(String(16), nullable=False, default='advisory')
+    scope_type = Column(String(16), nullable=False, default='global')
+    scope_market = Column(String(16))
+    scope_stock_code = Column(String(32))
+    change_note = Column(Text)
+    created_at = Column(DateTime, nullable=False, default=utc_naive_now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('principle_id', 'version', name='uix_investment_principle_version'),
+        CheckConstraint('version >= 1', name='ck_investment_principle_version_number'),
+        CheckConstraint(
+            "severity IN ('hard', 'soft', 'advisory')",
+            name='ck_investment_principle_version_severity',
+        ),
+        CheckConstraint(
+            "scope_type IN ('global', 'market', 'stock')",
+            name='ck_investment_principle_version_scope_type',
+        ),
+        CheckConstraint(
+            "(scope_type = 'global' AND scope_market IS NULL AND scope_stock_code IS NULL)"
+            " OR (scope_type = 'market' AND scope_market IS NOT NULL AND scope_stock_code IS NULL)"
+            " OR (scope_type = 'stock' AND scope_market IS NOT NULL AND scope_stock_code IS NOT NULL)",
+            name='ck_investment_principle_version_scope',
+        ),
+        Index('ix_investment_principle_version_principle_created', 'principle_id', 'created_at'),
+        Index('ix_investment_principle_version_category_severity', 'category', 'severity'),
+        Index(
+            'ix_investment_principle_version_scope',
+            'scope_type',
+            'scope_market',
+            'scope_stock_code',
+        ),
+    )
+
+
+class InvestmentPrincipleSource(Base):
+    """Evidence snapshot attached to one immutable principle version."""
+
+    __tablename__ = 'investment_principle_sources'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    principle_version_id = Column(
+        Integer,
+        ForeignKey('investment_principle_versions.id', ondelete='RESTRICT'),
+        nullable=False,
+        index=True,
+    )
+    source_type = Column(String(16), nullable=False, default='manual', index=True)
+    source_id = Column(String(128))
+    source_excerpt = Column(Text)
+    source_status = Column(String(16), nullable=False, default='available', index=True)
+    created_at = Column(DateTime, nullable=False, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ('manual', 'journal', 'opinion')",
+            name='ck_investment_principle_source_type',
+        ),
+        CheckConstraint(
+            "source_status IN ('available', 'deleted', 'unavailable')",
+            name='ck_investment_principle_source_status',
+        ),
+        CheckConstraint(
+            "(source_type = 'manual') OR (source_type IN ('journal', 'opinion') AND source_id IS NOT NULL AND source_id <> '')",
+            name='ck_investment_principle_source_reference',
+        ),
+        Index('ix_investment_principle_source_version_status', 'principle_version_id', 'source_status'),
+        Index('ix_investment_principle_source_type_id', 'source_type', 'source_id'),
     )
 
 
