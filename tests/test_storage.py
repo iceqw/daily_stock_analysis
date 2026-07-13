@@ -5,7 +5,7 @@ import os
 import sqlite3
 import tempfile
 import threading
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
 import pandas as pd
@@ -16,13 +16,21 @@ from sqlalchemy.sql import func
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import Config
-from src.storage import Base, CURRENT_SCHEMA_VERSION, DatabaseManager, DatabaseSchemaMigration, StockDaily
+from src.storage import (
+    Base,
+    CURRENT_SCHEMA_VERSION,
+    ConversationMessage,
+    DatabaseManager,
+    DatabaseSchemaMigration,
+    StockDaily,
+)
 
 class TestStorage(unittest.TestCase):
 
     @staticmethod
     def _list_sqlite_unique_indexes(db_path: str, table_name: str) -> dict[str, list[str]]:
-        with sqlite3.connect(db_path) as conn:
+        conn = sqlite3.connect(db_path)
+        try:
             rows = conn.execute(f"PRAGMA index_list({table_name})").fetchall()
             unique_indexes = {}
             for row in rows:
@@ -36,13 +44,16 @@ class TestStorage(unittest.TestCase):
                         index_columns.append(column_name)
                 unique_indexes[index_name] = index_columns
             return unique_indexes
+        finally:
+            conn.close()
 
     def test_legacy_intelligence_items_url_unique_index_rebuilds_without_collision(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         db_path = os.path.join(temp_dir.name, "legacy_intel.sqlite")
 
         try:
-            with sqlite3.connect(db_path) as conn:
+            conn = sqlite3.connect(db_path)
+            try:
                 conn.execute(
                     """CREATE TABLE intelligence_sources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,6 +117,9 @@ class TestStorage(unittest.TestCase):
                          '2026-01-02 00:00:00', '2026-01-02 00:00:00', 'market', None, 'cn', None),
                     ],
                 )
+                conn.commit()
+            finally:
+                conn.close()
 
             unique_indexes_before = self._list_sqlite_unique_indexes(db_path, "intelligence_items")
             self.assertIn("uix_intelligence_item_url_legacy", unique_indexes_before)
@@ -122,11 +136,14 @@ class TestStorage(unittest.TestCase):
                 unique_indexes_after["uix_intel_item_scope"],
                 ["source_id", "url", "scope_type", "scope_value", "market"],
             )
-            with sqlite3.connect(db_path) as conn:
+            conn = sqlite3.connect(db_path)
+            try:
                 table_count = conn.execute("SELECT COUNT(*) FROM intelligence_items").fetchone()[0]
                 temp_tables = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'intelligence_items_recreate_tmp_%'"
                 ).fetchall()
+            finally:
+                conn.close()
 
             self.assertEqual(table_count, 2)
             self.assertEqual(temp_tables, [])
@@ -381,6 +398,16 @@ class TestStorage(unittest.TestCase):
         db = DatabaseManager(db_url="sqlite:///:memory:")
         user_id = db.save_conversation_message("trace-hidden", "user", "visible question")
         assistant_id = db.save_conversation_message("trace-hidden", "assistant", "visible answer")
+        fixed_created_at = datetime(2026, 1, 1, 12, 0, 0)
+        with db.session_scope() as session:
+            messages = session.execute(
+                select(ConversationMessage)
+                .where(ConversationMessage.session_id == "trace-hidden")
+                .order_by(ConversationMessage.id)
+            ).scalars().all()
+            for message in messages:
+                message.created_at = fixed_created_at
+
         db.save_agent_provider_turn(
             session_id="trace-hidden",
             run_id="run-hidden",
@@ -413,6 +440,39 @@ class TestStorage(unittest.TestCase):
 
         self.assertEqual(deleted, 2)
         self.assertEqual(db.get_agent_provider_turns("trace-hidden"), [])
+
+        DatabaseManager.reset_instance()
+
+    def test_conversation_history_uses_id_order_for_equal_timestamps_and_limit(self):
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url="sqlite:///:memory:")
+        fixed_created_at = datetime(2026, 1, 1, 12, 0, 0)
+
+        for idx in range(4):
+            db.save_conversation_message("ordered-history", "user", f"message-{idx}")
+
+        with db.session_scope() as session:
+            messages = session.execute(
+                select(ConversationMessage)
+                .where(ConversationMessage.session_id == "ordered-history")
+                .order_by(ConversationMessage.id)
+            ).scalars().all()
+            for message in messages:
+                message.created_at = fixed_created_at
+            message_ids = [message.id for message in messages]
+
+        self.assertEqual(
+            [(message["role"], message["content"]) for message in db.get_conversation_history("ordered-history")],
+            [("user", f"message-{idx}") for idx in range(4)],
+        )
+        self.assertEqual(
+            [message["content"] for message in db.get_conversation_history("ordered-history", limit=2)],
+            ["message-2", "message-3"],
+        )
+        self.assertEqual(
+            [message["id"] for message in db.get_conversation_messages("ordered-history")],
+            [str(message_id) for message_id in message_ids],
+        )
 
         DatabaseManager.reset_instance()
 
@@ -817,8 +877,8 @@ class TestStorage(unittest.TestCase):
 
             self.assertEqual(total, 1)
         finally:
-            temp_dir.cleanup()
             DatabaseManager.reset_instance()
+            temp_dir.cleanup()
 
 if __name__ == '__main__':
     unittest.main()
