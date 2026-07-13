@@ -49,7 +49,7 @@ class AIOpinionItem(BaseModel):
     context_hash: Optional[str] = None
     retry_count: int = 0
     generated_at: Optional[str] = None
-    feedback_value: Optional[str] = None
+    feedback_value: Optional[OpinionFeedbackValue] = None
     feedback_note: Optional[str] = None
     feedback_updated_at: Optional[str] = None
     analysis_stock_code: Optional[str] = None

@@ -278,6 +278,27 @@ async def app_lifespan(app: FastAPI):
     app.state.system_config_service = SystemConfigService(
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
+    # Recover abandoned manual Journal generations once on startup.  The
+    # operation is idempotent and runs off the event loop so a bad/stale row
+    # cannot make the API unavailable during startup.
+    async def recover_stale_journal_tasks() -> None:
+        try:
+            from src.repositories.investment_journal_repo import InvestmentJournalRepository
+            from src.config import get_config
+
+            timeout_seconds = max(1, int(getattr(
+                get_config(), "generation_backend_timeout_seconds", 300,
+            )))
+            recovered = await asyncio.to_thread(
+                InvestmentJournalRepository().fail_stale_structuring,
+                timeout_seconds=timeout_seconds,
+            )
+            if recovered:
+                logger.info("[InvestmentJournal] startup recovery marked %d stale task(s) failed", recovered)
+        except Exception as exc:  # noqa: BLE001 - recovery is best effort.
+            logger.warning("Investment journal startup recovery failed: %s", exc)
+
+    app.state.investment_journal_recovery_task = asyncio.create_task(recover_stale_journal_tasks())
     _schedule_stock_index_background_refresh(app, "startup")
     try:
         yield
@@ -287,6 +308,11 @@ async def app_lifespan(app: FastAPI):
             refresh_task.cancel()
             with suppress(asyncio.CancelledError):
                 await refresh_task
+        recovery_task = getattr(app.state, "investment_journal_recovery_task", None)
+        if recovery_task is not None and not recovery_task.done():
+            recovery_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovery_task
         if hasattr(app.state, "system_config_service"):
             delattr(app.state, "system_config_service")
         runtime_scheduler = getattr(app.state, "runtime_scheduler_service", None)

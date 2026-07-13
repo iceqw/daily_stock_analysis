@@ -123,7 +123,7 @@ def get_ai_opinion(opinion_id: int) -> AIOpinionItem:
 @router.put(
     "/{opinion_id}/feedback",
     response_model=AIOpinionItem,
-    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     summary="Store user feedback for one AI opinion",
 )
 def update_ai_opinion_feedback(
@@ -135,6 +135,10 @@ def update_ai_opinion_feedback(
         return AIOpinionItem(**service.update_feedback(opinion_id, **request.model_dump()))
     except AIOpinionNotFoundError as exc:
         raise _not_found(exc)
+    except AIOpinionConflictError as exc:
+        raise _conflict(exc)
+    except AIOpinionSourceUnavailableError as exc:
+        raise _conflict(exc)
     except ValueError as exc:
         raise _bad_request(exc)
     except Exception as exc:

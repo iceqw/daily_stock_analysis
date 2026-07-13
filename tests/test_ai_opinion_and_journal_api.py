@@ -302,6 +302,71 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
         self.assertEqual(response.json()["feedback_note"], "Useful risk framing.")
         self.assertTrue(response.json()["feedback_updated_at"])
 
+    def test_ai_opinion_feedback_is_bounded_and_latest_submission_wins(self) -> None:
+        history_id = self._seed_history(code="AAPL")
+        opinion = AIOpinionService(db_manager=self.db).create_opinion(
+            analysis_history_id=history_id,
+            content="AAPL recap",
+            conclusion="AAPL conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "AAPL"},
+        )
+
+        too_long = self.client.put(
+            f"/api/v1/ai-opinions/{opinion['id']}/feedback",
+            json={"feedback_value": "useful", "feedback_note": "x" * 1001},
+        )
+        self.assertEqual(too_long.status_code, 422, too_long.text)
+
+        first = self.client.put(
+            f"/api/v1/ai-opinions/{opinion['id']}/feedback",
+            json={"feedback_value": "useful", "feedback_note": "first"},
+        )
+        second = self.client.put(
+            f"/api/v1/ai-opinions/{opinion['id']}/feedback",
+            json={"feedback_value": "not_useful", "feedback_note": "latest"},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json()["feedback_value"], "not_useful")
+        self.assertEqual(second.json()["feedback_note"], "latest")
+
+        listed = self.client.get(
+            "/api/v1/ai-opinions",
+            params={"stock_code": "AAPL", "page": 1, "page_size": 10},
+        )
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(listed.json()["items"][0]["feedback_value"], "not_useful")
+
+    def test_deleted_ai_opinion_feedback_is_read_only(self) -> None:
+        history_id = self._seed_history(code="AAPL")
+        opinion = AIOpinionService(db_manager=self.db).create_opinion(
+            analysis_history_id=history_id,
+            content="AAPL recap",
+            conclusion="AAPL conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "AAPL"},
+        )
+        self.db.delete_analysis_history_records([history_id])
+
+        response = self.client.put(
+            f"/api/v1/ai-opinions/{opinion['id']}/feedback",
+            json={"feedback_value": "useful", "feedback_note": "must not write"},
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+
+    def test_non_completed_ai_opinion_feedback_is_rejected(self) -> None:
+        history_id = self._seed_history(code="AAPL")
+        opinion = AIOpinionService(db_manager=self.db).create_pending_generation(
+            analysis_history_id=history_id,
+        )
+
+        response = self.client.put(
+            f"/api/v1/ai-opinions/{opinion['id']}/feedback",
+            json={"feedback_value": "useful", "feedback_note": "not ready"},
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+
     def test_ai_opinion_api_paginates_stock_history(self) -> None:
         history_ids = [self._seed_history(code="AAPL") for _ in range(3)]
         service = AIOpinionService(db_manager=self.db)

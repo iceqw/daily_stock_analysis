@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from src.config import get_config
 from src.core.trading_calendar import get_market_for_stock
 from src.repositories.ai_opinion_repo import AIOpinionRepository
 from src.repositories.investment_journal_repo import (
@@ -119,9 +118,6 @@ class InvestmentJournalService:
         page: int = 1,
         page_size: int = 20,
     ) -> Dict[str, Any]:
-        self.repo.fail_stale_structuring(
-            timeout_seconds=int(getattr(get_config(), "generation_backend_timeout_seconds", 300) or 300)
-        )
         market_norm = self._normalize_market(market)
         stock_code_norm = self._normalize_stock_code(stock_code, market=market_norm)
         entry_type_norm = self._normalize_optional_entry_type(entry_type)

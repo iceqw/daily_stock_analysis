@@ -396,11 +396,13 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
 
         scheduler = service._scheduler
         self.assertIsNotNone(scheduler)
-        self.assertEqual(len(scheduler.background_tasks), 1)  # type: ignore[attr-defined]
-        self.assertEqual(scheduler.background_tasks[0]["name"], "agent_event_monitor")  # type: ignore[index]
-        self.assertEqual(scheduler.background_tasks[0]["interval_seconds"], 7 * 60)  # type: ignore[index]
-        self.assertEqual(scheduler.background_tasks[0]["run_immediately"], True)  # type: ignore[index]
-        scheduler.background_tasks[0]["task"]()  # type: ignore[index]
+        self.assertEqual(len(scheduler.background_tasks), 2)  # type: ignore[attr-defined]
+        tasks = {entry["name"]: entry for entry in scheduler.background_tasks}  # type: ignore[attr-defined]
+        self.assertEqual(tasks["agent_event_monitor"]["interval_seconds"], 7 * 60)
+        self.assertEqual(tasks["agent_event_monitor"]["run_immediately"], True)
+        tasks["agent_event_monitor"]["task"]()
+        self.assertEqual(tasks["investment_journal_stale_recovery"]["interval_seconds"], 60)
+        self.assertEqual(tasks["investment_journal_stale_recovery"]["run_immediately"], False)
         fake_worker.run_once.assert_called_once()
 
     def test_rebuild_reuses_event_monitor_without_immediate_rerun(self) -> None:

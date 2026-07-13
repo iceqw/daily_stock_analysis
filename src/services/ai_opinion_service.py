@@ -170,12 +170,23 @@ class AIOpinionService:
         note = self._normalize_optional_text(feedback_note)
         if note and len(note) > 1000:
             raise ValueError("feedback_note must be at most 1000 characters")
+        row = self.repo.get(int(opinion_id))
+        if row is None:
+            raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
+        if row.source_status == "deleted" or row.analysis_history_id is None:
+            raise AIOpinionSourceUnavailableError(
+                f"AI opinion source analysis_history is unavailable: {opinion_id}"
+            )
+        if row.generation_status != "completed":
+            raise AIOpinionConflictError(
+                f"AI opinion feedback requires a completed opinion: {opinion_id}"
+            )
         row = self.repo.update_feedback(
             int(opinion_id),
             feedback_value=normalized_value,
             feedback_note=note,
         )
-        if row is None:
+        if row is None:  # pragma: no cover - guarded by the read above.
             raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
         analysis_history_available = (
             row.analysis_history_id is not None
