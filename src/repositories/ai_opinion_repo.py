@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from src.storage import AIOpinionRecord, DatabaseManager, utc_naive_now
+from src.storage import AnalysisHistory, AIOpinionRecord, DatabaseManager, utc_naive_now
 
 
 class AIOpinionVersionConflictError(RuntimeError):
@@ -102,6 +102,57 @@ class AIOpinionRepository:
                     .order_by(desc(AIOpinionRecord.version), desc(AIOpinionRecord.id))
                 ).scalars().all()
             )
+
+    def list_by_stock_codes(
+        self,
+        stock_codes: Sequence[str],
+        *,
+        current_only: bool = False,
+        limit: int = 100,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> Tuple[List[Tuple[AIOpinionRecord, AnalysisHistory]], int]:
+        normalized_codes = [
+            str(code or "").strip().upper()
+            for code in stock_codes
+            if str(code or "").strip()
+        ]
+        conditions = [
+            AnalysisHistory.code.in_(normalized_codes),
+            or_(
+                AnalysisHistory.report_type.is_(None),
+                AnalysisHistory.report_type != "market_review",
+            ),
+        ]
+        if not normalized_codes:
+            return [], 0
+        if current_only:
+            conditions.append(AIOpinionRecord.is_current.is_(True))
+        normalized_page = max(1, int(page))
+        normalized_page_size = max(1, min(int(page_size), 100))
+        with self.db.get_session() as session:
+            total = int(session.execute(
+                select(func.count(AIOpinionRecord.id))
+                .select_from(AIOpinionRecord)
+                .join(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id)
+                .where(*conditions)
+            ).scalar() or 0)
+            rows = list(
+                session.execute(
+                    select(AIOpinionRecord, AnalysisHistory)
+                    .join(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id)
+                    .where(*conditions)
+                    .order_by(
+                        desc(AIOpinionRecord.created_at),
+                        desc(AnalysisHistory.created_at),
+                        desc(AIOpinionRecord.version),
+                        desc(AIOpinionRecord.id),
+                    )
+                    .offset((normalized_page - 1) * normalized_page_size)
+                    .limit(normalized_page_size)
+                ).all()
+            )
+            return rows, total
 
     def get_current_by_analysis_history(
         self,

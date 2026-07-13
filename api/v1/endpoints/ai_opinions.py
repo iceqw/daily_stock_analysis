@@ -6,6 +6,8 @@ from __future__ import annotations
 import logging
 import uuid
 
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query, status
 
 from api.v1.schemas.ai_opinions import (
@@ -57,18 +59,40 @@ def _internal_error(message: str, exc: Exception) -> HTTPException:
     "",
     response_model=AIOpinionListResponse,
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
-    summary="List AI opinions for one analysis_history",
+    summary="List AI opinions by analysis history or stock",
 )
 def list_ai_opinions(
-    analysis_history_id: int = Query(..., gt=0),
+    analysis_history_id: Optional[int] = Query(None, gt=0),
+    stock_code: Optional[str] = Query(None, min_length=1),
+    market: Optional[str] = Query(None, min_length=1),
     current_only: bool = Query(False),
+    page: int = Query(1, gt=0),
+    page_size: int = Query(20, gt=0, le=100),
 ) -> AIOpinionListResponse:
     service = AIOpinionService()
     try:
+        if analysis_history_id is None and not stock_code:
+            raise ValueError("analysis_history_id or stock_code is required")
+        if analysis_history_id is not None and stock_code:
+            raise ValueError("analysis_history_id and stock_code cannot be used together")
+        if stock_code:
+            # market is accepted for frontend route symmetry; AI opinions are
+            # still linked through analysis_history, whose persisted key is code.
+            _ = market
+            return AIOpinionListResponse(
+                **service.list_opinions_by_stock(
+                    stock_code=stock_code,
+                    current_only=current_only,
+                    page=page,
+                    page_size=page_size,
+                )
+            )
         return AIOpinionListResponse(
             **service.list_opinions(
                 analysis_history_id=analysis_history_id,
                 current_only=current_only,
+                page=page,
+                page_size=page_size,
             )
         )
     except AIOpinionNotFoundError as exc:

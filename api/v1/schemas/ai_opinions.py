@@ -51,6 +51,9 @@ class AIOpinionItem(BaseModel):
     feedback_value: Optional[str] = None
     feedback_note: Optional[str] = None
     feedback_updated_at: Optional[str] = None
+    analysis_stock_code: Optional[str] = None
+    analysis_stock_name: Optional[str] = None
+    analysis_created_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -60,3 +63,5 @@ class AIOpinionListResponse(BaseModel):
 
     items: List[AIOpinionItem] = Field(default_factory=list)
     total: int
+    page: int = 1
+    page_size: int = 50

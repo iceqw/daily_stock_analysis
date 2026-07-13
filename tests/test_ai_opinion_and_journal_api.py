@@ -100,8 +100,10 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
             session.flush()
             return int(row.id)
 
-    def test_journal_api_manual_create_sync_list_and_update(self) -> None:
+    @patch("api.v1.endpoints.investment_journals.InvestmentJournalStructuringService.structure")
+    def test_journal_api_manual_create_sync_list_and_update(self, mocked_structure) -> None:
         history_id = self._seed_history()
+        mocked_structure.return_value = {"ok": True}
 
         manual_resp = self.client.post(
             "/api/v1/investment-journals/manual",
@@ -112,8 +114,11 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
                 "summary_snapshot": "manual summary",
             },
         )
-        self.assertEqual(manual_resp.status_code, 200, manual_resp.text)
-        manual_item = manual_resp.json()
+        self.assertEqual(manual_resp.status_code, 202, manual_resp.text)
+        accepted = manual_resp.json()
+        self.assertTrue(accepted["accepted"])
+        self.assertIn("task_id", accepted)
+        manual_item = accepted["entry"]
         self.assertEqual(manual_item["entry_type"], "manual")
         self.assertEqual(manual_item["raw_content"], "first manual note")
         self.assertEqual(manual_item["ai_processing_status"], "pending")
@@ -213,24 +218,113 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
             regenerate_resp = self.client.post(f"/api/v1/ai-opinions/{opinion_id}/regenerate")
             self.assertEqual(regenerate_resp.status_code, 409, regenerate_resp.text)
 
-    def test_journal_api_structure_and_retry(self) -> None:
-        manual_resp = self.client.post(
-            "/api/v1/investment-journals/manual",
-            json={
-                "stock_code": "AAPL",
-                "market": "us",
-                "raw_content": "I may buy later if valuation improves.",
-            },
+    def test_ai_opinion_api_lists_by_stock_code(self) -> None:
+        first_history_id = self._seed_history(code="AAPL")
+        second_history_id = self._seed_history(code="AAPL")
+        other_history_id = self._seed_history(code="MSFT")
+        service = AIOpinionService(db_manager=self.db)
+        service.create_opinion(
+            analysis_history_id=first_history_id,
+            content="first AAPL recap",
+            conclusion="first AAPL conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "first"},
         )
-        entry_id = manual_resp.json()["id"]
+        service.create_opinion(
+            analysis_history_id=second_history_id,
+            content="second AAPL recap",
+            conclusion="second AAPL conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "second"},
+        )
+        service.create_opinion(
+            analysis_history_id=other_history_id,
+            content="MSFT recap",
+            conclusion="MSFT conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "other"},
+        )
 
+        list_resp = self.client.get(
+            "/api/v1/ai-opinions",
+            params={"stock_code": "aapl", "market": "us", "current_only": "false"},
+        )
+
+        self.assertEqual(list_resp.status_code, 200, list_resp.text)
+        payload = list_resp.json()
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["page"], 1)
+        self.assertEqual(payload["page_size"], 20)
+        self.assertEqual(
+            {item["analysis_history_id"] for item in payload["items"]},
+            {first_history_id, second_history_id},
+        )
+        self.assertEqual({item["analysis_stock_code"] for item in payload["items"]}, {"AAPL"})
+        self.assertTrue(all(item["analysis_created_at"] for item in payload["items"]))
+
+    def test_ai_opinion_api_lists_by_stock_code_variants(self) -> None:
+        history_id = self._seed_history(code="HK00700")
+        service = AIOpinionService(db_manager=self.db)
+        service.create_opinion(
+            analysis_history_id=history_id,
+            content="Tencent recap",
+            conclusion="Tencent conclusion",
+            output_json={"schema_version": "ai-opinion-output-v1", "summary": "hk"},
+        )
+
+        list_resp = self.client.get(
+            "/api/v1/ai-opinions",
+            params={"stock_code": "00700.HK", "market": "hk", "current_only": "false"},
+        )
+
+        self.assertEqual(list_resp.status_code, 200, list_resp.text)
+        payload = list_resp.json()
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["items"][0]["analysis_history_id"], history_id)
+
+    def test_ai_opinion_api_paginates_stock_history(self) -> None:
+        history_ids = [self._seed_history(code="AAPL") for _ in range(3)]
+        service = AIOpinionService(db_manager=self.db)
+        for index, history_id in enumerate(history_ids):
+            service.create_opinion(
+                analysis_history_id=history_id,
+                content=f"AAPL recap {index}",
+                conclusion=f"AAPL conclusion {index}",
+                output_json={"schema_version": "ai-opinion-output-v1", "summary": str(index)},
+            )
+
+        first_page = self.client.get(
+            "/api/v1/ai-opinions",
+            params={"stock_code": "AAPL", "page": 1, "page_size": 2},
+        )
+        second_page = self.client.get(
+            "/api/v1/ai-opinions",
+            params={"stock_code": "AAPL", "page": 2, "page_size": 2},
+        )
+
+        self.assertEqual(first_page.status_code, 200, first_page.text)
+        self.assertEqual(second_page.status_code, 200, second_page.text)
+        self.assertEqual(first_page.json()["total"], 3)
+        self.assertEqual(first_page.json()["page"], 1)
+        self.assertEqual(first_page.json()["page_size"], 2)
+        self.assertEqual(len(first_page.json()["items"]), 2)
+        self.assertEqual(second_page.json()["total"], 3)
+        self.assertEqual(second_page.json()["page"], 2)
+        self.assertEqual(len(second_page.json()["items"]), 1)
+
+    def test_journal_api_structure_and_retry(self) -> None:
         with patch(
             "api.v1.endpoints.investment_journals.InvestmentJournalStructuringService.structure"
         ) as mocked_structure:
             mocked_structure.return_value = {"ok": True}
-            structure_resp = self.client.post(f"/api/v1/investment-journals/{entry_id}/structure")
-            self.assertEqual(structure_resp.status_code, 202, structure_resp.text)
-            self.assertEqual(structure_resp.json()["entry"]["ai_processing_status"], "pending")
+            manual_resp = self.client.post(
+                "/api/v1/investment-journals/manual",
+                json={
+                    "stock_code": "AAPL",
+                    "market": "us",
+                    "raw_content": "I may buy later if valuation improves.",
+                },
+            )
+            self.assertEqual(manual_resp.status_code, 202, manual_resp.text)
+            self.assertEqual(manual_resp.json()["entry"]["ai_processing_status"], "pending")
+            entry_id = manual_resp.json()["entry"]["id"]
 
             with self.db.session_scope() as session:
                 row = session.get(InvestmentJournalEntry, entry_id)
@@ -249,20 +343,24 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
         analysis_conflict = self.client.post(f"/api/v1/investment-journals/{analysis_entry['id']}/structure")
         self.assertEqual(analysis_conflict.status_code, 409, analysis_conflict.text)
 
-        manual_resp = self.client.post(
-            "/api/v1/investment-journals/manual",
-            json={
-                "stock_code": "AAPL",
-                "market": "us",
-                "raw_content": "seed",
-            },
-        )
-        entry_id = manual_resp.json()["id"]
-        with self.db.session_scope() as session:
-            row = session.get(InvestmentJournalEntry, entry_id)
-            row.raw_content = None
-        invalid = self.client.post(f"/api/v1/investment-journals/{entry_id}/structure")
-        self.assertEqual(invalid.status_code, 422, invalid.text)
+        with patch(
+            "api.v1.endpoints.investment_journals.InvestmentJournalStructuringService.structure"
+        ):
+            manual_resp = self.client.post(
+                "/api/v1/investment-journals/manual",
+                json={
+                    "stock_code": "AAPL",
+                    "market": "us",
+                    "raw_content": "seed",
+                },
+            )
+            entry_id = manual_resp.json()["entry"]["id"]
+            with self.db.session_scope() as session:
+                row = session.get(InvestmentJournalEntry, entry_id)
+                row.ai_processing_status = "failed"
+                row.raw_content = None
+            invalid = self.client.post(f"/api/v1/investment-journals/{entry_id}/structure")
+            self.assertEqual(invalid.status_code, 422, invalid.text)
 
     def test_ai_opinion_api_returns_404_409_and_422(self) -> None:
         missing_history = self.client.post("/api/v1/ai-opinions/generate/999999")

@@ -11,6 +11,7 @@ from src.repositories.ai_opinion_repo import (
     AIOpinionVersionConflictError,
 )
 from src.services.ai_opinion_context_builder import AnalysisOpinionContextBuilder
+from src.services.history_service import HistoryService
 from src.storage import DatabaseManager
 from src.utils.data_processing import parse_json_field
 
@@ -160,22 +161,57 @@ class AIOpinionService:
         *,
         analysis_history_id: Any,
         current_only: bool = False,
+        page: Any = 1,
+        page_size: Any = 50,
     ) -> Dict[str, Any]:
         history_id = self._normalize_history_id(analysis_history_id)
         if self.db.get_analysis_history_by_id(history_id) is None:
             raise AIOpinionNotFoundError(f"Analysis history not found: {history_id}")
-        items = [
+        normalized_page, normalized_page_size = self._normalize_pagination(page, page_size)
+        all_items = [
             self._serialize(row, analysis_history_available=True)
             for row in self.repo.list_by_analysis_history(history_id, current_only=current_only)
         ]
+        start = (normalized_page - 1) * normalized_page_size
+        items = all_items[start:start + normalized_page_size]
         return {
             "items": items,
-            "total": len(items),
+            "total": len(all_items),
+            "page": normalized_page,
+            "page_size": normalized_page_size,
+        }
+
+    def list_opinions_by_stock(
+        self,
+        *,
+        stock_code: Any,
+        current_only: bool = False,
+        page: Any = 1,
+        page_size: Any = 50,
+    ) -> Dict[str, Any]:
+        normalized_codes = self._normalize_stock_codes(stock_code)
+        normalized_page, normalized_page_size = self._normalize_pagination(page, page_size)
+        rows, total = self.repo.list_by_stock_codes(
+            normalized_codes,
+            current_only=current_only,
+            page=normalized_page,
+            page_size=normalized_page_size,
+        )
+
+        items = [
+            self._serialize(row, analysis_history_available=True, analysis_history=history)
+            for row, history in rows
+        ]
+        return {
+            "items": items,
+            "total": total,
+            "page": normalized_page,
+            "page_size": normalized_page_size,
         }
 
     @staticmethod
-    def _serialize(row, *, analysis_history_available: bool) -> Dict[str, Any]:
-        return {
+    def _serialize(row, *, analysis_history_available: bool, analysis_history=None) -> Dict[str, Any]:
+        payload = {
             "id": row.id,
             "analysis_history_id": row.analysis_history_id,
             "analysis_history_available": bool(analysis_history_available),
@@ -207,6 +243,14 @@ class AIOpinionService:
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
+        if analysis_history is not None:
+            payload.update({
+                "analysis_stock_code": analysis_history.code,
+                "analysis_stock_name": analysis_history.name,
+                "analysis_created_at": analysis_history.created_at.isoformat()
+                if analysis_history.created_at else None,
+            })
+        return payload
 
     @staticmethod
     def _normalize_history_id(value: Any) -> int:
@@ -217,6 +261,32 @@ class AIOpinionService:
         if parsed <= 0:
             raise ValueError("analysis_history_id must be a positive integer")
         return parsed
+
+    @staticmethod
+    def _normalize_pagination(page: Any, page_size: Any) -> tuple[int, int]:
+        try:
+            normalized_page = int(page)
+            normalized_page_size = int(page_size)
+        except (TypeError, ValueError):
+            raise ValueError("page and page_size must be positive integers") from None
+        if normalized_page <= 0 or normalized_page_size <= 0:
+            raise ValueError("page and page_size must be positive integers")
+        return normalized_page, min(normalized_page_size, 100)
+
+    @staticmethod
+    def _normalize_stock_code(value: Any) -> str:
+        code = str(value or "").strip().upper()
+        if not code:
+            raise ValueError("stock_code is required")
+        return code
+
+    @classmethod
+    def _normalize_stock_codes(cls, value: Any) -> List[str]:
+        code = cls._normalize_stock_code(value)
+        candidates = HistoryService._history_code_filter_candidates(code)
+        if code not in candidates:
+            candidates.append(code)
+        return candidates
 
     @staticmethod
     def _normalize_status(value: Any) -> str:

@@ -56,6 +56,27 @@ def _internal_error(message: str, exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail={"error": "internal_error", "message": message})
 
 
+def _submit_structuring_task(entry: dict, *, message: str) -> InvestmentJournalStructuringAccepted:
+    entry_id = int(entry["id"])
+    task_id = f"journal_structure_{entry_id}_{uuid.uuid4().hex}"
+    task = get_task_queue().submit_background_task(
+        lambda: InvestmentJournalStructuringService().structure(entry_id),
+        stock_code=f"journal_{entry['stock_code']}_{entry_id}",
+        stock_name=f"Journal {entry_id}",
+        report_type="investment_journal_structuring",
+        message=message,
+        task_id=task_id,
+        trace_id=task_id,
+    )
+    return InvestmentJournalStructuringAccepted(
+        entry=InvestmentJournalEntryItem(**entry),
+        task_id=task.task_id,
+        trace_id=task.trace_id or task.task_id,
+        task_status=task.status.value,
+        message=task.message,
+    )
+
+
 @router.get(
     "",
     response_model=InvestmentJournalListResponse,
@@ -104,16 +125,22 @@ def get_investment_journal_entry(entry_id: int) -> InvestmentJournalEntryItem:
 
 @router.post(
     "/manual",
-    response_model=InvestmentJournalEntryItem,
-    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
-    summary="Create a manual investment note",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=InvestmentJournalStructuringAccepted,
+    responses={400: {"model": ErrorResponse}, 422: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Create a manual investment note and accept AI structuring",
 )
 def create_manual_investment_journal_entry(
     request: ManualJournalEntryCreateRequest,
-) -> InvestmentJournalEntryItem:
+) -> InvestmentJournalStructuringAccepted:
     service = InvestmentJournalService()
     try:
-        return InvestmentJournalEntryItem(**service.create_manual_entry(**request.model_dump()))
+        created = service.create_manual_entry(**request.model_dump())
+        pending = service.create_pending_structuring(int(created["id"]))
+        return _submit_structuring_task(
+            pending,
+            message="Investment journal structuring task accepted",
+        )
     except ValueError as exc:
         raise _bad_request(exc)
     except Exception as exc:
@@ -186,23 +213,7 @@ def structure_investment_journal_entry(entry_id: int) -> InvestmentJournalStruct
     service = InvestmentJournalService()
     try:
         entry = service.create_pending_structuring(entry_id)
-        task_id = f"journal_structure_{entry_id}_{uuid.uuid4().hex}"
-        task = get_task_queue().submit_background_task(
-            lambda: InvestmentJournalStructuringService().structure(entry_id),
-            stock_code=f"journal_{entry['stock_code']}_{entry_id}",
-            stock_name=f"Journal {entry_id}",
-            report_type="investment_journal_structuring",
-            message="Investment journal structuring task accepted",
-            task_id=task_id,
-            trace_id=task_id,
-        )
-        return InvestmentJournalStructuringAccepted(
-            entry=InvestmentJournalEntryItem(**entry),
-            task_id=task.task_id,
-            trace_id=task.trace_id or task.task_id,
-            task_status=task.status.value,
-            message=task.message,
-        )
+        return _submit_structuring_task(entry, message="Investment journal structuring task accepted")
     except InvestmentJournalNotFoundError as exc:
         raise _not_found(exc)
     except InvestmentJournalConflictError as exc:
@@ -229,23 +240,7 @@ def retry_structure_investment_journal_entry(entry_id: int) -> InvestmentJournal
     service = InvestmentJournalService()
     try:
         entry = service.retry_structuring(entry_id)
-        task_id = f"journal_structure_{entry_id}_{uuid.uuid4().hex}"
-        task = get_task_queue().submit_background_task(
-            lambda: InvestmentJournalStructuringService().structure(entry_id),
-            stock_code=f"journal_{entry['stock_code']}_{entry_id}",
-            stock_name=f"Journal {entry_id}",
-            report_type="investment_journal_structuring",
-            message="Investment journal structuring retry task accepted",
-            task_id=task_id,
-            trace_id=task_id,
-        )
-        return InvestmentJournalStructuringAccepted(
-            entry=InvestmentJournalEntryItem(**entry),
-            task_id=task.task_id,
-            trace_id=task.trace_id or task.task_id,
-            task_status=task.status.value,
-            message=task.message,
-        )
+        return _submit_structuring_task(entry, message="Investment journal structuring retry task accepted")
     except InvestmentJournalNotFoundError as exc:
         raise _not_found(exc)
     except InvestmentJournalConflictError as exc:
