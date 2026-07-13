@@ -5,7 +5,7 @@ import os
 import sqlite3
 import tempfile
 import threading
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
 import pandas as pd
@@ -16,7 +16,14 @@ from sqlalchemy.sql import func
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import Config
-from src.storage import Base, CURRENT_SCHEMA_VERSION, DatabaseManager, DatabaseSchemaMigration, StockDaily
+from src.storage import (
+    Base,
+    CURRENT_SCHEMA_VERSION,
+    ConversationMessage,
+    DatabaseManager,
+    DatabaseSchemaMigration,
+    StockDaily,
+)
 
 class TestStorage(unittest.TestCase):
 
@@ -391,6 +398,16 @@ class TestStorage(unittest.TestCase):
         db = DatabaseManager(db_url="sqlite:///:memory:")
         user_id = db.save_conversation_message("trace-hidden", "user", "visible question")
         assistant_id = db.save_conversation_message("trace-hidden", "assistant", "visible answer")
+        fixed_created_at = datetime(2026, 1, 1, 12, 0, 0)
+        with db.session_scope() as session:
+            messages = session.execute(
+                select(ConversationMessage)
+                .where(ConversationMessage.session_id == "trace-hidden")
+                .order_by(ConversationMessage.id)
+            ).scalars().all()
+            for message in messages:
+                message.created_at = fixed_created_at
+
         db.save_agent_provider_turn(
             session_id="trace-hidden",
             run_id="run-hidden",
@@ -423,6 +440,39 @@ class TestStorage(unittest.TestCase):
 
         self.assertEqual(deleted, 2)
         self.assertEqual(db.get_agent_provider_turns("trace-hidden"), [])
+
+        DatabaseManager.reset_instance()
+
+    def test_conversation_history_uses_id_order_for_equal_timestamps_and_limit(self):
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url="sqlite:///:memory:")
+        fixed_created_at = datetime(2026, 1, 1, 12, 0, 0)
+
+        for idx in range(4):
+            db.save_conversation_message("ordered-history", "user", f"message-{idx}")
+
+        with db.session_scope() as session:
+            messages = session.execute(
+                select(ConversationMessage)
+                .where(ConversationMessage.session_id == "ordered-history")
+                .order_by(ConversationMessage.id)
+            ).scalars().all()
+            for message in messages:
+                message.created_at = fixed_created_at
+            message_ids = [message.id for message in messages]
+
+        self.assertEqual(
+            [(message["role"], message["content"]) for message in db.get_conversation_history("ordered-history")],
+            [("user", f"message-{idx}") for idx in range(4)],
+        )
+        self.assertEqual(
+            [message["content"] for message in db.get_conversation_history("ordered-history", limit=2)],
+            ["message-2", "message-3"],
+        )
+        self.assertEqual(
+            [message["id"] for message in db.get_conversation_messages("ordered-history")],
+            [str(message_id) for message_id in message_ids],
+        )
 
         DatabaseManager.reset_instance()
 
