@@ -146,6 +146,15 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
         self.assertEqual(payload["total"], 2)
         self.assertEqual({item["entry_type"] for item in payload["items"]}, {"manual", "analysis"})
 
+        searched = self.client.get(
+            "/api/v1/investment-journals",
+            params={"stock_code": "600519", "market": "cn", "search": "first", "sort_by": "type"},
+        )
+        self.assertEqual(searched.status_code, 200, searched.text)
+        self.assertEqual(searched.json()["total"], 1)
+        self.assertEqual(searched.json()["items"][0]["entry_type"], "manual")
+        self.assertEqual(searched.json()["stats"]["manual"], 1)
+
         analysis_only = self.client.get(
             "/api/v1/investment-journals",
             params={
@@ -262,6 +271,15 @@ class AIOpinionAndJournalApiTestCase(unittest.TestCase):
         )
         self.assertEqual({item["analysis_stock_code"] for item in payload["items"]}, {"AAPL"})
         self.assertTrue(all(item["analysis_created_at"] for item in payload["items"]))
+
+        filtered = self.client.get(
+            "/api/v1/ai-opinions",
+            params={"stock_code": "AAPL", "market": "us", "search": "second", "generation_status": "completed", "sort_by": "version", "sort_order": "asc"},
+        )
+        self.assertEqual(filtered.status_code, 200, filtered.text)
+        self.assertEqual(filtered.json()["total"], 1)
+        self.assertEqual(filtered.json()["items"][0]["conclusion"], "second AAPL conclusion")
+        self.assertEqual(filtered.json()["stats"]["completed"], 2)
 
     def test_ai_opinion_api_lists_by_stock_code_variants(self) -> None:
         history_id = self._seed_history(code="HK00700")

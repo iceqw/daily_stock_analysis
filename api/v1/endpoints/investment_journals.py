@@ -89,6 +89,9 @@ def list_investment_journal_entries(
     entry_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None, max_length=120),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
 ) -> InvestmentJournalListResponse:
     service = InvestmentJournalService()
     try:
@@ -99,6 +102,9 @@ def list_investment_journal_entries(
                 entry_type=entry_type,
                 page=page,
                 page_size=page_size,
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
             )
         )
     except ValueError as exc:

@@ -67,6 +67,7 @@ class InvestmentJournalListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    stats: Optional[dict[str, int]] = None
 
 
 class ManualJournalEntryCreateRequest(BaseModel):

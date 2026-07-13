@@ -66,6 +66,7 @@ class AIOpinionListResponse(BaseModel):
     total: int
     page: int = 1
     page_size: int = 50
+    stats: Optional[dict[str, int]] = None
 
 
 class AIOpinionFeedbackRequest(BaseModel):

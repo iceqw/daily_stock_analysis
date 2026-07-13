@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import List, Optional, Tuple
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from src.storage import DatabaseManager, InvestmentJournalEntry, utc_naive_now
@@ -255,6 +255,9 @@ class InvestmentJournalRepository:
         entry_type: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
+        search: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Tuple[List[InvestmentJournalEntry], int]:
         safe_page = max(1, int(page))
         safe_page_size = max(1, min(int(page_size), 100))
@@ -265,6 +268,20 @@ class InvestmentJournalRepository:
         ]
         if entry_type:
             conditions.append(InvestmentJournalEntry.entry_type == entry_type)
+        if search:
+            term = f"%{search.strip()}%"
+            conditions.append(or_(
+                InvestmentJournalEntry.raw_content.ilike(term),
+                InvestmentJournalEntry.summary_snapshot.ilike(term),
+                InvestmentJournalEntry.risk_summary.ilike(term),
+                InvestmentJournalEntry.source_label.ilike(term),
+            ))
+        order_column = {
+            "created_at": InvestmentJournalEntry.created_at,
+            "updated_at": InvestmentJournalEntry.updated_at,
+            "status": InvestmentJournalEntry.ai_processing_status,
+            "type": InvestmentJournalEntry.entry_type,
+        }.get(sort_by, InvestmentJournalEntry.created_at)
         with self.db.get_session() as session:
             total = session.execute(
                 select(func.count(InvestmentJournalEntry.id)).where(*conditions)
@@ -272,11 +289,28 @@ class InvestmentJournalRepository:
             rows = session.execute(
                 select(InvestmentJournalEntry)
                 .where(*conditions)
-                .order_by(desc(InvestmentJournalEntry.created_at), desc(InvestmentJournalEntry.id))
+                .order_by((asc if str(sort_order).lower() == "asc" else desc)(order_column), desc(InvestmentJournalEntry.id))
                 .offset(offset)
                 .limit(safe_page_size)
             ).scalars().all()
             return list(rows), int(total)
+
+    def stock_stats(self, *, stock_code: str, market: str) -> dict:
+        with self.db.get_session() as session:
+            rows = session.execute(select(InvestmentJournalEntry).where(
+                InvestmentJournalEntry.stock_code == stock_code,
+                InvestmentJournalEntry.market == market,
+            )).scalars().all()
+        stats = {"total": len(rows), "analysis": 0, "manual": 0, "completed": 0, "pending": 0, "processing": 0, "failed": 0, "source_deleted": 0}
+        for row in rows:
+            if row.entry_type in stats:
+                stats[row.entry_type] += 1
+            status = self.normalize_processing_status(row.ai_processing_status)
+            if status in stats:
+                stats[status] += 1
+            if row.source_status == "deleted":
+                stats["source_deleted"] += 1
+        return stats
 
     @staticmethod
     def normalize_processing_status(value: Optional[str]) -> str:

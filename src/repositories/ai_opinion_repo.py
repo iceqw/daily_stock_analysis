@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence, Tuple
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from src.storage import AnalysisHistory, AIOpinionRecord, DatabaseManager, utc_naive_now
@@ -111,6 +111,12 @@ class AIOpinionRepository:
         limit: int = 100,
         page: int = 1,
         page_size: int = 50,
+        search: Optional[str] = None,
+        generation_status: Optional[str] = None,
+        source_status: Optional[str] = None,
+        feedback_value: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Tuple[List[Tuple[AIOpinionRecord, AnalysisHistory]], int]:
         normalized_codes = [
             str(code or "").strip().upper()
@@ -128,24 +134,42 @@ class AIOpinionRepository:
             return [], 0
         if current_only:
             conditions.append(AIOpinionRecord.is_current.is_(True))
+        if generation_status:
+            conditions.append(AIOpinionRecord.generation_status == generation_status)
+        if source_status:
+            conditions.append(AIOpinionRecord.source_status == source_status)
+        if feedback_value:
+            conditions.append(AIOpinionRecord.feedback_value == feedback_value)
+        if search:
+            term = f"%{search.strip()}%"
+            conditions.append(or_(
+                AIOpinionRecord.title.ilike(term),
+                AIOpinionRecord.content.ilike(term),
+                AIOpinionRecord.conclusion.ilike(term),
+                AnalysisHistory.code.ilike(term),
+                AnalysisHistory.name.ilike(term),
+            ))
         normalized_page = max(1, int(page))
         normalized_page_size = max(1, min(int(page_size), 100))
         with self.db.get_session() as session:
             total = int(session.execute(
                 select(func.count(AIOpinionRecord.id))
                 .select_from(AIOpinionRecord)
-                .join(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id)
+                .outerjoin(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id)
                 .where(*conditions)
             ).scalar() or 0)
             rows = list(
                 session.execute(
                     select(AIOpinionRecord, AnalysisHistory)
-                    .join(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id)
+                    .outerjoin(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id)
                     .where(*conditions)
                     .order_by(
-                        desc(AIOpinionRecord.created_at),
-                        desc(AnalysisHistory.created_at),
-                        desc(AIOpinionRecord.version),
+                        (asc if str(sort_order).lower() == "asc" else desc)({
+                            "created_at": AIOpinionRecord.created_at,
+                            "generated_at": AIOpinionRecord.generated_at,
+                            "version": AIOpinionRecord.version,
+                            "status": AIOpinionRecord.generation_status,
+                        }.get(sort_by, AIOpinionRecord.created_at)),
                         desc(AIOpinionRecord.id),
                     )
                     .offset((normalized_page - 1) * normalized_page_size)
@@ -153,6 +177,27 @@ class AIOpinionRepository:
                 ).all()
             )
             return rows, total
+
+    def stock_stats(self, stock_codes: Sequence[str]) -> dict:
+        normalized_codes = [str(code or "").strip().upper() for code in stock_codes if str(code or "").strip()]
+        empty = {"total": 0, "completed": 0, "pending": 0, "generating": 0, "failed": 0, "rejected": 0, "useful": 0, "not_useful": 0, "source_deleted": 0}
+        if not normalized_codes:
+            return empty
+        conditions = [
+            AnalysisHistory.code.in_(normalized_codes),
+            or_(AnalysisHistory.report_type.is_(None), AnalysisHistory.report_type != "market_review"),
+        ]
+        with self.db.get_session() as session:
+            rows = session.execute(select(AIOpinionRecord).outerjoin(AnalysisHistory, AIOpinionRecord.analysis_history_id == AnalysisHistory.id).where(*conditions)).scalars().all()
+        stats = {**empty, "total": len(rows)}
+        for row in rows:
+            if row.generation_status in stats:
+                stats[row.generation_status] += 1
+            if row.feedback_value in {"useful", "not_useful"}:
+                stats[row.feedback_value] += 1
+            if row.source_status == "deleted":
+                stats["source_deleted"] += 1
+        return stats
 
     def get_current_by_analysis_history(
         self,

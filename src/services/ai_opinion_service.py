@@ -226,6 +226,12 @@ class AIOpinionService:
         current_only: bool = False,
         page: Any = 1,
         page_size: Any = 50,
+        search: Optional[Any] = None,
+        generation_status: Optional[Any] = None,
+        source_status: Optional[Any] = None,
+        feedback_value: Optional[Any] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
         normalized_codes = self._normalize_stock_codes(stock_code)
         normalized_page, normalized_page_size = self._normalize_pagination(page, page_size)
@@ -234,6 +240,12 @@ class AIOpinionService:
             current_only=current_only,
             page=normalized_page,
             page_size=normalized_page_size,
+            search=self._normalize_search(search),
+            generation_status=self._normalize_optional_filter(generation_status, AI_OPINION_GENERATION_STATUSES, "generation_status"),
+            source_status=self._normalize_optional_filter(source_status, AI_OPINION_SOURCE_STATUSES, "source_status"),
+            feedback_value=self._normalize_optional_filter(feedback_value, AI_OPINION_FEEDBACK_VALUES, "feedback_value"),
+            sort_by=self._normalize_sort(sort_by, {"created_at", "generated_at", "version", "status"}),
+            sort_order=self._normalize_sort(sort_order, {"asc", "desc"}),
         )
 
         items = [
@@ -245,6 +257,7 @@ class AIOpinionService:
             "total": total,
             "page": normalized_page,
             "page_size": normalized_page_size,
+            "stats": self.repo.stock_stats(normalized_codes),
         }
 
     @staticmethod
@@ -333,6 +346,25 @@ class AIOpinionService:
             allowed = ", ".join(sorted(AI_OPINION_GENERATION_STATUSES))
             raise ValueError(f"generation_status must be one of {allowed}")
         return status
+
+    @staticmethod
+    def _normalize_optional_filter(value: Any, allowed: set[str] | frozenset[str], field_name: str) -> Optional[str]:
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in allowed:
+            raise ValueError(f"{field_name} is invalid")
+        return normalized
+
+    @staticmethod
+    def _normalize_search(value: Any) -> Optional[str]:
+        text = str(value or "").strip()
+        return text[:120] or None
+
+    @staticmethod
+    def _normalize_sort(value: Any, allowed: set[str]) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in allowed else next(iter(sorted(allowed)))
 
     @staticmethod
     def _normalize_optional_text(value: Any) -> Optional[str]:

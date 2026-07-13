@@ -69,6 +69,12 @@ def list_ai_opinions(
     current_only: bool = Query(False),
     page: int = Query(1, gt=0),
     page_size: int = Query(20, gt=0, le=100),
+    search: Optional[str] = Query(None, max_length=120),
+    generation_status: Optional[str] = Query(None),
+    source_status: Optional[str] = Query(None),
+    feedback_value: Optional[str] = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
 ) -> AIOpinionListResponse:
     service = AIOpinionService()
     try:
@@ -86,6 +92,12 @@ def list_ai_opinions(
                     current_only=current_only,
                     page=page,
                     page_size=page_size,
+                    search=search,
+                    generation_status=generation_status,
+                    source_status=source_status,
+                    feedback_value=feedback_value,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
                 )
             )
         return AIOpinionListResponse(

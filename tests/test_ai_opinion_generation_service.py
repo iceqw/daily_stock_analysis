@@ -86,6 +86,9 @@ class AIOpinionGenerationServiceTestCase(unittest.TestCase):
         self.assertTrue(result["is_current"])
         self.assertIsNotNone(result["output_json"])
         self.assertIn("Summary", result["content"])
+        self.assertIn("source_trace", result["audit_metadata"])
+        self.assertIn("supporting_sources", result["audit_metadata"])
+        self.assertIn("truncated", result["audit_metadata"])
 
     def test_generate_rejects_investment_advice(self) -> None:
         history_id = self._seed_history()

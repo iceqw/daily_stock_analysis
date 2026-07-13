@@ -117,6 +117,9 @@ class InvestmentJournalService:
         entry_type: Optional[Any] = None,
         page: int = 1,
         page_size: int = 20,
+        search: Optional[Any] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
         market_norm = self._normalize_market(market)
         stock_code_norm = self._normalize_stock_code(stock_code, market=market_norm)
@@ -127,6 +130,9 @@ class InvestmentJournalService:
             entry_type=entry_type_norm,
             page=page,
             page_size=page_size,
+            search=self._normalize_search(search),
+            sort_by=self._normalize_sort(sort_by, {"created_at", "updated_at", "status", "type"}),
+            sort_order=self._normalize_sort(sort_order, {"asc", "desc"}),
         )
         analysis_ids = sorted({
             int(row.source_analysis_history_id)
@@ -156,6 +162,7 @@ class InvestmentJournalService:
             "total": total,
             "page": max(1, int(page)),
             "page_size": max(1, min(int(page_size), 100)),
+            "stats": self.repo.stock_stats(stock_code=stock_code_norm, market=market_norm),
         }
 
     def update_manual_entry(
@@ -427,6 +434,16 @@ class InvestmentJournalService:
         if value in (None, ""):
             return None
         return cls._normalize_entry_type(value)
+
+    @staticmethod
+    def _normalize_search(value: Any) -> Optional[str]:
+        text = str(value or "").strip()
+        return text[:120] or None
+
+    @staticmethod
+    def _normalize_sort(value: Any, allowed: set[str]) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in allowed else next(iter(sorted(allowed)))
 
     @classmethod
     def _normalize_stock_code(cls, value: Any, *, market: Optional[str] = None) -> str:
