@@ -22,6 +22,11 @@ from api.v1.schemas.analysis import (
     BatchTaskAcceptedResponse,
     TaskStatus,
 )
+from api.v1.schemas.ai_opinions import (
+    AIOpinionGenerateAccepted,
+    AIOpinionItem,
+    AIOpinionListResponse,
+)
 from api.v1.schemas.history import (
     HistoryItem,
     HistoryListResponse,
@@ -34,6 +39,14 @@ from api.v1.schemas.history import (
     ReportSummary,
     ReportStrategy,
     ReportDetails,
+)
+from api.v1.schemas.investment_journals import (
+    AnalysisJournalSyncResponse,
+    InvestmentJournalEntryItem,
+    InvestmentJournalListResponse,
+    InvestmentJournalStructuringAccepted,
+    ManualJournalEntryCreateRequest,
+    ManualJournalEntryUpdateRequest,
 )
 from api.v1.schemas.stocks import (
     StockQuote,
@@ -139,6 +152,10 @@ __all__ = [
     "TaskAccepted",
     "BatchTaskAcceptedResponse",
     "TaskStatus",
+    # ai opinions
+    "AIOpinionGenerateAccepted",
+    "AIOpinionItem",
+    "AIOpinionListResponse",
     # history
     "HistoryItem",
     "HistoryListResponse",
@@ -151,6 +168,13 @@ __all__ = [
     "ReportSummary",
     "ReportStrategy",
     "ReportDetails",
+    # investment journals
+    "AnalysisJournalSyncResponse",
+    "InvestmentJournalEntryItem",
+    "InvestmentJournalListResponse",
+    "InvestmentJournalStructuringAccepted",
+    "ManualJournalEntryCreateRequest",
+    "ManualJournalEntryUpdateRequest",
     # stocks
     "StockQuote",
     "StockHistoryResponse",

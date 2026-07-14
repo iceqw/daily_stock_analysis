@@ -13,6 +13,7 @@ from fastapi import APIRouter
 
 from api.v1.endpoints import (
     agent,
+    ai_opinions,
     alerts,
     alphasift,
     analysis,
@@ -22,6 +23,8 @@ from api.v1.endpoints import (
     health,
     history,
     intelligence,
+    investment_journals,
+    investment_principles,
     portfolio,
     stocks,
     system_config,
@@ -54,6 +57,18 @@ router.include_router(
     history.router,
     prefix="/history",
     tags=["History"]
+)
+
+router.include_router(
+    investment_journals.router,
+    prefix="/investment-journals",
+    tags=["InvestmentJournals"]
+)
+
+router.include_router(
+    investment_principles.router,
+    prefix="/investment-principles",
+    tags=["InvestmentPrinciples"]
 )
 
 router.include_router(
@@ -96,6 +111,12 @@ router.include_router(
     decision_signals.router,
     prefix="/decision-signals",
     tags=["DecisionSignals"]
+)
+
+router.include_router(
+    ai_opinions.router,
+    prefix="/ai-opinions",
+    tags=["AIOpinions"]
 )
 
 router.include_router(

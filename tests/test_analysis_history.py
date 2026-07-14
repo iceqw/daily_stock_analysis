@@ -15,7 +15,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, patch
+
+if "dotenv" not in sys.modules:
+    dotenv_stub = ModuleType("dotenv")
+    dotenv_stub.load_dotenv = lambda *args, **kwargs: None
+    dotenv_stub.dotenv_values = lambda *args, **kwargs: {}
+    sys.modules["dotenv"] = dotenv_stub
 
 # Keep this test runnable when optional LLM runtime deps are not installed.
 try:
@@ -35,12 +42,14 @@ except ModuleNotFoundError:
 
 from src.config import Config
 from src.storage import (
+    AIOpinionRecord,
     DatabaseManager,
     AnalysisHistory,
     BacktestResult,
     DecisionSignalFeedbackRecord,
     DecisionSignalOutcomeRecord,
     DecisionSignalRecord,
+    InvestmentJournalEntry,
 )
 from src.analyzer import AnalysisResult
 from src.daily_market_context_guardrail import apply_daily_market_context_guardrail
@@ -1862,6 +1871,23 @@ class AnalysisHistoryTestCase(unittest.TestCase):
                 feedback_value="useful",
                 source="api",
             ))
+            session.add(AIOpinionRecord(
+                analysis_history_id=record_id,
+                version=1,
+                is_current=True,
+                generation_status="completed",
+                source_status="available",
+                conclusion="linked ai opinion",
+            ))
+            session.add(InvestmentJournalEntry(
+                stock_code="600519",
+                market="cn",
+                entry_type="analysis",
+                source_analysis_history_id=record_id,
+                summary_snapshot="linked journal entry",
+                source_label="analysis_history",
+                ai_processing_status="not_applicable",
+            ))
             session.add(DecisionSignalRecord(
                 stock_code="000001",
                 stock_name="平安银行",
@@ -1903,6 +1929,20 @@ class AnalysisHistoryTestCase(unittest.TestCase):
                 ).count(),
                 0,
             )
+            self.assertEqual(session.query(AIOpinionRecord).count(), 1)
+            preserved_opinion = session.query(AIOpinionRecord).one()
+            self.assertIsNone(preserved_opinion.analysis_history_id)
+            self.assertEqual(preserved_opinion.source_status, "deleted")
+            self.assertEqual(
+                session.query(InvestmentJournalEntry).filter(
+                    InvestmentJournalEntry.id.isnot(None)
+                ).count(),
+                1,
+            )
+            preserved_entry = session.query(InvestmentJournalEntry).one()
+            self.assertIsNone(preserved_entry.source_analysis_history_id)
+            self.assertEqual(preserved_entry.source_status, "deleted")
+            self.assertEqual(preserved_entry.summary_snapshot, "linked journal entry")
             self.assertEqual(
                 session.query(DecisionSignalRecord).filter(DecisionSignalRecord.trace_id == "trace-delete-unrelated").count(),
                 1,

@@ -172,6 +172,7 @@ from src.services.stock_index_remote_service import (
     refresh_remote_stock_index_cache,
     settings_from_config,
 )
+from src.storage import DatabaseManager
 
 
 _STOCK_INDEX_FILENAME = "stocks.index.json"
@@ -277,6 +278,27 @@ async def app_lifespan(app: FastAPI):
     app.state.system_config_service = SystemConfigService(
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
+    # Recover abandoned manual Journal generations once on startup.  The
+    # operation is idempotent and runs off the event loop so a bad/stale row
+    # cannot make the API unavailable during startup.
+    async def recover_stale_journal_tasks() -> None:
+        try:
+            from src.repositories.investment_journal_repo import InvestmentJournalRepository
+            from src.config import get_config
+
+            timeout_seconds = max(1, int(getattr(
+                get_config(), "generation_backend_timeout_seconds", 300,
+            )))
+            recovered = await asyncio.to_thread(
+                InvestmentJournalRepository().fail_stale_structuring,
+                timeout_seconds=timeout_seconds,
+            )
+            if recovered:
+                logger.info("[InvestmentJournal] startup recovery marked %d stale task(s) failed", recovered)
+        except Exception as exc:  # noqa: BLE001 - recovery is best effort.
+            logger.warning("Investment journal startup recovery failed: %s", exc)
+
+    app.state.investment_journal_recovery_task = asyncio.create_task(recover_stale_journal_tasks())
     _schedule_stock_index_background_refresh(app, "startup")
     try:
         yield
@@ -286,6 +308,11 @@ async def app_lifespan(app: FastAPI):
             refresh_task.cancel()
             with suppress(asyncio.CancelledError):
                 await refresh_task
+        recovery_task = getattr(app.state, "investment_journal_recovery_task", None)
+        if recovery_task is not None and not recovery_task.done():
+            recovery_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovery_task
         if hasattr(app.state, "system_config_service"):
             delattr(app.state, "system_config_service")
         runtime_scheduler = getattr(app.state, "runtime_scheduler_service", None)
@@ -294,7 +321,7 @@ async def app_lifespan(app: FastAPI):
             delattr(app.state, "runtime_scheduler_service")
 
 
-def create_app(static_dir: Optional[Path] = None) -> FastAPI:
+def create_app(static_dir: Optional[Path] = None, db_manager: Optional[DatabaseManager] = None) -> FastAPI:
     """
     创建并配置 FastAPI 应用实例
     
@@ -326,6 +353,9 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
         version="1.0.0",
         lifespan=app_lifespan,
     )
+    # API dependencies may provide an isolated manager for tests or embedding.
+    # Existing callers keep the production singleton behavior when omitted.
+    app.state.database_manager = db_manager
     
     # ============================================================
     # CORS 配置
