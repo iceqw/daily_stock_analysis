@@ -8,7 +8,7 @@ from typing import List, Optional, Sequence, Tuple
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from src.storage import AnalysisHistory, AIOpinionRecord, DatabaseManager, utc_naive_now
+from src.storage import AnalysisHistory, AIOpinionPrincipleRef, AIOpinionRecord, DatabaseManager, utc_naive_now
 
 
 class AIOpinionVersionConflictError(RuntimeError):
@@ -68,6 +68,72 @@ class AIOpinionRepository:
             raise AIOpinionVersionConflictError(
                 f"AI opinion version conflict for analysis_history_id={analysis_history_id}"
             ) from exc
+
+    def create_version_with_principles(self, fields: dict, snapshot, *, mark_as_current: bool = False) -> AIOpinionRecord:
+        """Create an Opinion and all frozen refs in one write transaction."""
+        analysis_history_id = int(fields["analysis_history_id"])
+        values = dict(fields)
+        values.pop("is_current", None)
+
+        def write_operation(session):
+            latest = session.execute(select(func.max(AIOpinionRecord.version)).where(
+                AIOpinionRecord.analysis_history_id == analysis_history_id
+            )).scalar()
+            now_value = utc_naive_now()
+            row = AIOpinionRecord(
+                **values, version=int(latest or 0) + 1, is_current=bool(mark_as_current),
+                created_at=values.get("created_at") or now_value, updated_at=values.get("updated_at") or now_value,
+                principle_snapshot_json=snapshot.snapshot_json,
+                principle_snapshot_hash=snapshot.snapshot_hash,
+                principle_snapshot_count=snapshot.retained_count,
+            )
+            session.add(row)
+            session.flush()
+            for item in snapshot.items:
+                session.add(AIOpinionPrincipleRef(
+                    ai_opinion_id=row.id, principle_id=item.principle_id, principle_version=item.principle_version,
+                    category=item.category, severity=item.severity, title=item.title,
+                    snapshot_json=self._json_item(item), content_hash=item.content_hash,
+                ))
+            session.flush()
+            session.refresh(row)
+            session.expunge(row)
+            return row
+
+        try:
+            return self.db._run_write_transaction(f"create_ai_opinion_version_with_principles[{analysis_history_id}]", write_operation)
+        except IntegrityError as exc:
+            raise AIOpinionVersionConflictError(
+                f"AI opinion version conflict for analysis_history_id={analysis_history_id}"
+            ) from exc
+
+    @staticmethod
+    def _json_item(item) -> str:
+        import json
+        return json.dumps(item.to_dict(), ensure_ascii=False, separators=(",", ":"))
+
+    def list_principle_refs(self, opinion_id: int) -> List[AIOpinionPrincipleRef]:
+        with self.db.get_session() as session:
+            return list(session.execute(select(AIOpinionPrincipleRef).where(
+                AIOpinionPrincipleRef.ai_opinion_id == int(opinion_id)
+            ).order_by(AIOpinionPrincipleRef.id)).scalars().all())
+
+    def update_principle_assessments(self, opinion_id: int, assessments: dict[int, dict]) -> None:
+        def write_operation(session):
+            refs = list(session.execute(select(AIOpinionPrincipleRef).where(
+                AIOpinionPrincipleRef.ai_opinion_id == int(opinion_id)
+            )).scalars().all())
+            if {ref.principle_id for ref in refs} != set(assessments):
+                raise AIOpinionStateTransitionError("principle_assessment_refs_mismatch")
+            for ref in refs:
+                value = assessments[ref.principle_id]
+                ref.assessment_status = value["status"]
+                ref.relevance = value["relevance"]
+                ref.evidence_json = value["evidence_json"]
+                ref.explanation = value["explanation"]
+                ref.confidence = value["confidence"]
+            session.flush()
+        self.db._run_write_transaction(f"update_ai_opinion_principle_assessments[{int(opinion_id)}]", write_operation)
 
     def get(self, opinion_id: int) -> Optional[AIOpinionRecord]:
         with self.db.get_session() as session:
@@ -256,6 +322,7 @@ class AIOpinionRepository:
         audit_metadata_json: Optional[str],
         context_hash: Optional[str],
         generated_at,
+        principle_assessments: Optional[dict[int, dict]] = None,
     ) -> Optional[AIOpinionRecord]:
         def write_operation(session):
             row = session.execute(
@@ -278,6 +345,19 @@ class AIOpinionRepository:
                 ).scalars().all():
                     stale.is_current = False
                     stale.updated_at = now_value
+            if principle_assessments is not None:
+                refs = list(session.execute(select(AIOpinionPrincipleRef).where(
+                    AIOpinionPrincipleRef.ai_opinion_id == row.id
+                )).scalars().all())
+                if {ref.principle_id for ref in refs} != set(principle_assessments):
+                    raise AIOpinionStateTransitionError("completed_principle_assessments_mismatch")
+                for ref in refs:
+                    assessment = principle_assessments[ref.principle_id]
+                    ref.assessment_status = assessment["status"]
+                    ref.relevance = assessment["relevance"]
+                    ref.evidence_json = assessment["evidence_json"]
+                    ref.explanation = assessment["explanation"]
+                    ref.confidence = assessment["confidence"]
             row.generation_status = "completed"
             row.content = content
             row.conclusion = conclusion
