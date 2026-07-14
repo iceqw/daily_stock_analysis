@@ -16,6 +16,7 @@ import { MarketReviewReportView } from '../components/report/MarketReviewReportV
 import { ReportSummary } from '../components/report/ReportSummary';
 import { RunFlowPanel } from '../components/run-flow';
 import { TaskPanel } from '../components/tasks';
+import { AIOpinionPanel } from '../components/ai-opinion/AIOpinionPanel';
 import { useDashboardLifecycle, useHomeDashboardState } from '../hooks';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
@@ -1021,17 +1022,22 @@ const HomePage: React.FC = () => {
                     onRetry={() => void openHistoryTrend()}
                   />
                 ) : (
-                  <ReportSummary
-                    data={selectedReport}
-                    isHistory
-                    onOpenRunFlow={openHistoryRunFlow}
-                    watchlist={{
-                      isInWatchlist: watchlistState.isInWatchlist,
-                      onToggle: watchlistState.toggleWatchlist,
-                      isActioning: watchlistState.isActioning,
-                      actionMessage: watchlistState.actionMessage,
-                    }}
-                  />
+                  <div className="space-y-4">
+                    <ReportSummary
+                      data={selectedReport}
+                      isHistory
+                      onOpenRunFlow={openHistoryRunFlow}
+                      watchlist={{
+                        isInWatchlist: watchlistState.isInWatchlist,
+                        onToggle: watchlistState.toggleWatchlist,
+                        isActioning: watchlistState.isActioning,
+                        actionMessage: watchlistState.actionMessage,
+                      }}
+                    />
+                    {selectedReport.meta.id !== undefined && selectedReport.meta.reportType !== 'market_review' ? (
+                      <AIOpinionPanel analysisHistoryId={selectedReport.meta.id} />
+                    ) : null}
+                  </div>
                 )}
               </div>
             ) : !marketReviewReport ? (
