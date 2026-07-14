@@ -26,6 +26,7 @@ from src.services.ai_opinion_validator import (
     validate_ai_opinion_output_v2,
     AIOpinionStructuredOutputV2,
 )
+from src.services.principle_context_builder import load_frozen_principle_snapshot
 from src.storage import DatabaseManager
 
 
@@ -63,7 +64,10 @@ class AIOpinionGenerationService:
             context = self.context_builder.build(int(row.analysis_history_id))
             prompts = load_prompt(self.PROMPT_NAME, self.PROMPT_VERSION)
             context_json = json.dumps(context.model_dump(mode="json"), ensure_ascii=False, indent=2)
-            snapshot_json = row.principle_snapshot_json or "[]"
+            frozen_snapshot = load_frozen_principle_snapshot(
+                row.principle_snapshot_json, row.principle_snapshot_hash, row.principle_snapshot_count
+            )
+            snapshot_json = frozen_snapshot.snapshot_json
             user_prompt = prompts["user"].replace("{{CONTEXT_JSON}}", context_json).replace(
                 "{{PRINCIPLE_CONTEXT_JSON}}", snapshot_json
             )
@@ -84,12 +88,7 @@ class AIOpinionGenerationService:
                 },
             )
             parsed = self._parse_output_compat(result.text)
-            from types import SimpleNamespace
-            snapshot = SimpleNamespace(items=tuple(
-                SimpleNamespace(principle_id=item["principle_id"], principle_version=item["principle_version"])
-                for item in json.loads(snapshot_json)
-            ))
-            validate_ai_opinion_output_v2(parsed, context=context, principle_snapshot=snapshot)
+            validate_ai_opinion_output_v2(parsed, context=context, principle_snapshot=frozen_snapshot)
             content = render_ai_opinion_content(parsed)
             completed = self.repo.mark_completed(
                 int(opinion_id),

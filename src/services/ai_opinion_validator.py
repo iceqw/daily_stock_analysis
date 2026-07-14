@@ -163,6 +163,7 @@ def validate_ai_opinion_output_v2(
     allowed_ids = {
         item.principle_id: item.principle_version for item in principle_snapshot.items
     }
+    allowed_refs = {item.ref for item in context.supporting_sources}
     if any(pattern.search(output.overall_discipline_summary) for pattern in _BANNED_PATTERNS):
         raise AIOpinionSafetyError("opinion_contains_prohibited_investment_advice")
     seen: set[int] = set()
@@ -178,13 +179,19 @@ def validate_ai_opinion_output_v2(
             raise AIOpinionSafetyError("principle_version_mismatch")
         if assessment.status in {"at_risk", "violated"} and not assessment.explanation.strip():
             raise AIOpinionSafetyError("principle_explanation_required")
-        if assessment.status == "violated" and not assessment.evidence:
-            raise AIOpinionSafetyError("violated_requires_evidence")
+        if assessment.status == "violated" and not any(
+            evidence.source_ref and evidence.source_ref in allowed_refs for evidence in assessment.evidence
+        ):
+            raise AIOpinionSafetyError("violated_requires_referenced_evidence")
         for evidence in assessment.evidence:
             if evidence.source_type != "derived_summary" and not evidence.source_ref:
                 raise AIOpinionSafetyError("principle_evidence_source_ref_required")
-            if evidence.source_ref not in {item.ref for item in context.supporting_sources}:
+            if evidence.source_ref and evidence.source_ref not in allowed_refs:
                 raise AIOpinionSafetyError("principle_evidence_source_ref_not_allowed")
+            if evidence.source_ref:
+                source_types = {item.ref: item.source_type for item in context.supporting_sources}
+                if evidence.source_type != source_types[evidence.source_ref]:
+                    raise AIOpinionSafetyError("principle_evidence_source_type_mismatch")
         for value in (assessment.explanation, output.overall_discipline_summary):
             if any(pattern.search(value) for pattern in _BANNED_PATTERNS):
                 raise AIOpinionSafetyError("opinion_contains_prohibited_investment_advice")

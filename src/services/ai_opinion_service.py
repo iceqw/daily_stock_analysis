@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from src.repositories.ai_opinion_repo import (
     AIOpinionRepository,
+    AIOpinionStateTransitionError,
     AIOpinionVersionConflictError,
 )
 from src.services.ai_opinion_context_builder import AnalysisOpinionContextBuilder
@@ -58,7 +59,7 @@ class AIOpinionService:
         self.repo = repo or AIOpinionRepository(db_manager)
         self.db = db_manager or getattr(self.repo, "db", None) or DatabaseManager.get_instance()
         self.context_builder = context_builder or AnalysisOpinionContextBuilder(self.db)
-        self.principle_context_builder = principle_context_builder or PrincipleContextBuilder()
+        self.principle_context_builder = principle_context_builder or PrincipleContextBuilder(self.db)
 
     def create_opinion(
         self,
@@ -161,7 +162,10 @@ class AIOpinionService:
         row = self.repo.get(int(opinion_id))
         if row is None:
             raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
-        retried = self.repo.retry(int(opinion_id))
+        try:
+            retried = self.repo.retry(int(opinion_id))
+        except AIOpinionStateTransitionError as exc:
+            raise AIOpinionConflictError(str(exc)) from exc
         if retried is None:
             raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
         return self._serialize(retried, analysis_history_available=bool(retried.analysis_history_id))

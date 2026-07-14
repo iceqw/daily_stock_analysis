@@ -24,6 +24,9 @@ class OpinionV2ValidatorTest(unittest.TestCase):
     def _context(self):
         return SimpleNamespace(supporting_sources=[])
 
+    def _context_with_source(self):
+        return SimpleNamespace(supporting_sources=[SimpleNamespace(ref="analysis:1", source_type="analysis_history")])
+
     def test_empty_snapshot_is_valid_and_deterministic(self):
         output = parse_ai_opinion_output_v2(json.dumps(_base()))
         validate_ai_opinion_output_v2(output, context=self._context(), principle_snapshot=self._snapshot())
@@ -51,3 +54,20 @@ class OpinionV2ValidatorTest(unittest.TestCase):
         payload["overall_discipline_summary"] = "buy now"
         with self.assertRaises(AIOpinionSafetyError):
             validate_ai_opinion_output_v2(parse_ai_opinion_output_v2(json.dumps(payload)), context=self._context(), principle_snapshot=self._snapshot())
+
+    def test_derived_summary_without_ref_is_allowed_for_non_violated(self):
+        payload = _base()
+        payload["principle_assessment"] = [{"principle_id": 1, "principle_version": 1, "status": "aligned",
+            "relevance": 1, "evidence": [{"statement": "derived", "source_type": "derived_summary", "source_ref": None}],
+            "explanation": "ok", "confidence": .8}]
+        validate_ai_opinion_output_v2(parse_ai_opinion_output_v2(json.dumps(payload)), context=self._context(), principle_snapshot=self._snapshot((1, 1)))
+
+    def test_violated_requires_referenced_whitelisted_evidence(self):
+        payload = _base()
+        payload["principle_assessment"] = [{"principle_id": 1, "principle_version": 1, "status": "violated",
+            "relevance": 1, "evidence": [{"statement": "derived", "source_type": "derived_summary", "source_ref": None}],
+            "explanation": "conflict", "confidence": .8}]
+        with self.assertRaises(AIOpinionSafetyError):
+            validate_ai_opinion_output_v2(parse_ai_opinion_output_v2(json.dumps(payload)), context=self._context(), principle_snapshot=self._snapshot((1, 1)))
+        payload["principle_assessment"][0]["evidence"] = [{"statement": "source", "source_type": "analysis_history", "source_ref": "analysis:1"}]
+        validate_ai_opinion_output_v2(parse_ai_opinion_output_v2(json.dumps(payload)), context=self._context_with_source(), principle_snapshot=self._snapshot((1, 1)))

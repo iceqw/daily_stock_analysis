@@ -312,6 +312,15 @@ class AIOpinionRepository:
                 return None
             if row.generation_status not in {"failed", "rejected"}:
                 raise AIOpinionStateTransitionError(f"ai_opinion_status_not_retryable:{row.generation_status}")
+            inflight = session.execute(
+                select(func.count(AIOpinionRecord.id)).where(
+                    AIOpinionRecord.analysis_history_id == row.analysis_history_id,
+                    AIOpinionRecord.id != row.id,
+                    AIOpinionRecord.generation_status.in_(("pending", "generating")),
+                )
+            ).scalar()
+            if inflight:
+                raise AIOpinionStateTransitionError("ai_opinion_retry_conflict_inflight_generation")
             row.generation_status = "pending"
             row.error_message = None
             row.updated_at = utc_naive_now()

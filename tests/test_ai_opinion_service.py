@@ -182,6 +182,37 @@ class AIOpinionServiceTestCase(unittest.TestCase):
         self.assertEqual(current["total"], 1)
         self.assertEqual(current["items"][0]["version"], 1)
 
+    def test_retry_success_preserves_snapshot_and_refs(self) -> None:
+        history_id = self._seed_history()
+        pending = self.service.create_pending_generation(analysis_history_id=history_id)
+        self.service.repo.mark_failed(pending["id"], error_message="temporary")
+        before = self.service.get_opinion(pending["id"])
+        retried = self.service.retry_opinion(pending["id"])
+        after = self.service.get_opinion(pending["id"])
+        self.assertEqual(retried["generation_status"], "pending")
+        self.assertEqual(after["principle_snapshot_json"], before["principle_snapshot_json"])
+        self.assertEqual(after["principle_snapshot_hash"], before["principle_snapshot_hash"])
+        self.assertEqual(after["principle_snapshot_count"], before["principle_snapshot_count"])
+        self.assertEqual(after["principle_refs"], before["principle_refs"])
+
+    def test_principle_builder_uses_service_database(self) -> None:
+        self.assertIs(self.service.principle_context_builder.repository.db, self.db)
+
+    def test_retry_conflicts_with_other_pending_or_generating(self) -> None:
+        history_id = self._seed_history()
+        first = self.service.create_pending_generation(analysis_history_id=history_id)
+        self.service.repo.mark_failed(first["id"], error_message="temporary")
+        other = self.service.create_pending_generation(analysis_history_id=history_id)
+        with self.assertRaises(AIOpinionConflictError):
+            self.service.retry_opinion(first["id"])
+        self.assertEqual(self.service.get_opinion(first["id"])["generation_status"], "failed")
+        self.service.repo.mark_failed(other["id"], error_message="temporary")
+        generating = self.service.create_pending_generation(analysis_history_id=history_id)
+        self.service.repo.mark_generating(generating["id"])
+        with self.assertRaises(AIOpinionConflictError):
+            self.service.retry_opinion(first["id"])
+        self.assertEqual(self.service.get_opinion(first["id"])["generation_status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()
