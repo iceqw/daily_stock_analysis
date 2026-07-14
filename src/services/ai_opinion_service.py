@@ -133,11 +133,11 @@ class AIOpinionService:
             )
         try:
             fields = {
-                    "analysis_history_id": history_id,
-                    "generation_status": "pending",
-                    "source_status": "available",
-                    "retry_count": 0,
-                    "is_current": False,
+                "analysis_history_id": history_id,
+                "generation_status": "pending",
+                "source_status": "available",
+                "retry_count": 0,
+                "is_current": False,
             }
             if hasattr(self.repo, "create_version_with_principles"):
                 row = self.repo.create_version_with_principles(fields, principle_snapshot)

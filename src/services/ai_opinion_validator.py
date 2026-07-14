@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 from src.services.ai_opinion_context_builder import AnalysisOpinionContext
 from src.services.principle_context_builder import PrincipleContextSnapshot
-from src.services.principle_context_builder import PrincipleContextSnapshot
 
 
 class AIOpinionSchemaError(ValueError):

@@ -22,11 +22,9 @@ from src.services.ai_opinion_validator import (
     AIOpinionSchemaError,
     parse_ai_opinion_output,
     render_ai_opinion_content,
-    validate_ai_opinion_output,
     parse_ai_opinion_output_v2,
     validate_ai_opinion_output_v2,
     AIOpinionStructuredOutputV2,
-    parse_ai_opinion_output,
 )
 from src.storage import DatabaseManager
 
