@@ -1,5 +1,3 @@
-import React from 'react';
-
 export type PrincipleAssessmentStatus = 'aligned' | 'at_risk' | 'violated' | 'not_applicable' | 'insufficient_evidence';
 
 export interface PrincipleAssessment {
