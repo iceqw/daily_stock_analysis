@@ -249,3 +249,36 @@ def regenerate_ai_opinion(opinion_id: int) -> AIOpinionGenerateAccepted:
         raise _bad_request(exc)
     except Exception as exc:
         raise _internal_error("Create AI opinion regeneration task failed", exc)
+
+
+@router.post(
+    "/{opinion_id}/retry",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AIOpinionGenerateAccepted,
+    summary="Retry one failed AI opinion using its frozen snapshot",
+)
+def retry_ai_opinion(opinion_id: int) -> AIOpinionGenerateAccepted:
+    service = AIOpinionService()
+    try:
+        created = service.retry_opinion(opinion_id)
+        new_id = int(created["id"])
+        task_id = f"ai_opinion_retry_{new_id}_{uuid.uuid4().hex}"
+        task = get_task_queue().submit_background_task(
+            lambda: AIOpinionGenerationService().generate(new_id),
+            stock_code=f"ai_opinion_{created['analysis_history_id'] or new_id}",
+            stock_name=f"AI Opinion {new_id}", report_type="ai_opinion_generation",
+            message="AI Opinion retry task accepted", task_id=task_id, trace_id=task_id,
+        )
+        return AIOpinionGenerateAccepted(
+            opinion=AIOpinionItem(**created), task_id=task.task_id,
+            trace_id=task.trace_id or task.task_id, task_status=task.status.value,
+            message=task.message,
+        )
+    except AIOpinionNotFoundError as exc:
+        raise _not_found(exc)
+    except AIOpinionConflictError as exc:
+        raise _conflict(exc)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Create AI opinion retry task failed", exc)

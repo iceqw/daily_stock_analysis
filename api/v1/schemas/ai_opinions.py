@@ -47,6 +47,10 @@ class AIOpinionItem(BaseModel):
     audit_metadata: Optional[Any] = None
     error_message: Optional[str] = None
     context_hash: Optional[str] = None
+    principle_snapshot_hash: Optional[str] = None
+    principle_snapshot_count: Optional[int] = None
+    principle_snapshot_json: Optional[Any] = None
+    principle_refs: List[Any] = Field(default_factory=list)
     retry_count: int = 0
     generated_at: Optional[str] = None
     feedback_value: Optional[OpinionFeedbackValue] = None

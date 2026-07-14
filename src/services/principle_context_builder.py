@@ -203,6 +203,7 @@ class PrincipleContextBuilder:
             estimated_size=len(snapshot_json),
         )
 
+
     def _normalize_row(self, row: Any) -> PrincipleSnapshotItem:
         principle = getattr(row, "principle", None)
         version = getattr(row, "version", None)
@@ -332,3 +333,80 @@ class PrincipleContextBuilder:
     @staticmethod
     def _positive_limit(value: Any, field_name: str) -> int:
         return PrincipleContextBuilder._positive_int(value, field_name)
+
+
+def load_frozen_principle_snapshot(
+    snapshot_json: Optional[str], snapshot_hash: Optional[str], snapshot_count: Optional[int]
+) -> PrincipleContextSnapshot:
+    """Restore and verify a persisted immutable principle snapshot."""
+    if snapshot_json is None or snapshot_hash is None or snapshot_count is None:
+        raise PrincipleContextValidationError("frozen principle snapshot metadata is incomplete")
+    try:
+        payload = json.loads(snapshot_json)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise PrincipleContextValidationError("principle snapshot JSON is invalid") from exc
+    if not isinstance(payload, list):
+        raise PrincipleContextValidationError("principle snapshot root must be an array")
+    if isinstance(snapshot_count, bool) or not isinstance(snapshot_count, int) or snapshot_count != len(payload):
+        raise PrincipleContextValidationError("principle snapshot count mismatch")
+
+    items: List[PrincipleSnapshotItem] = []
+    seen_ids: set[int] = set()
+    required = {"principle_id", "principle_version", "category", "severity", "scope", "title", "statement", "rationale", "content_hash"}
+    for raw in payload:
+        if not isinstance(raw, dict) or not required.issubset(raw):
+            raise PrincipleContextValidationError("principle snapshot item is incomplete")
+        principle_id = raw["principle_id"]
+        principle_version = raw["principle_version"]
+        if isinstance(principle_id, bool) or not isinstance(principle_id, int) or principle_id <= 0:
+            raise PrincipleContextValidationError("frozen principle_id is invalid")
+        if isinstance(principle_version, bool) or not isinstance(principle_version, int) or principle_version <= 0:
+            raise PrincipleContextValidationError("frozen principle_version is invalid")
+        if principle_id in seen_ids:
+            raise PrincipleContextValidationError(f"duplicate frozen principle identity: {principle_id}")
+        seen_ids.add(principle_id)
+        scope_raw = raw["scope"]
+        if not isinstance(scope_raw, dict):
+            raise PrincipleContextValidationError("frozen principle scope is invalid")
+        scope_type = PrincipleContextBuilder._normalize_text(scope_raw.get("type")).lower()
+        scope = PrincipleScope(
+            scope_type,
+            PrincipleContextBuilder._normalize_text(scope_raw.get("market")).lower() or None,
+            PrincipleContextBuilder._normalize_text(scope_raw.get("stock_code")).upper() or None,
+        )
+        if scope_type not in {"global", "market", "stock"}:
+            raise PrincipleContextValidationError("frozen principle scope type is invalid")
+        if scope_type == "global":
+            scope = PrincipleScope("global", None, None)
+        elif scope_type == "market" and not scope.market:
+            raise PrincipleContextValidationError("frozen market scope is incomplete")
+        elif scope_type == "stock" and (not scope.market or not scope.stock_code):
+            raise PrincipleContextValidationError("frozen stock scope is incomplete")
+        values = {key: PrincipleContextBuilder._normalize_text(raw[key]) for key in ("category", "severity", "title", "statement", "rationale")}
+        if not all(values[key] for key in ("category", "severity", "title", "statement")):
+            raise PrincipleContextValidationError("frozen principle text is incomplete")
+        item_payload = {
+            "principle_id": principle_id, "principle_version": principle_version,
+            "category": values["category"], "severity": values["severity"], "scope": scope.to_dict(),
+            "title": values["title"], "statement": values["statement"], "rationale": values["rationale"],
+        }
+        expected_content_hash = PrincipleContextBuilder._sha256(PrincipleContextBuilder._canonical_json(item_payload))
+        if raw["content_hash"] != expected_content_hash:
+            raise PrincipleContextValidationError("frozen principle content hash mismatch")
+        items.append(PrincipleSnapshotItem(
+            principle_id=principle_id, principle_version=principle_version,
+            category=values["category"], severity=values["severity"], scope=scope,
+            title=values["title"], statement=values["statement"], rationale=values["rationale"],
+            content_hash=expected_content_hash,
+        ))
+    canonical_json = PrincipleContextBuilder._canonical_json([item.to_dict() for item in items])
+    expected_hash = PrincipleContextBuilder._sha256(canonical_json)
+    if snapshot_hash != expected_hash:
+        raise PrincipleContextValidationError("frozen principle snapshot hash mismatch")
+    return PrincipleContextSnapshot(
+        items=tuple(items), snapshot_json=canonical_json, snapshot_hash=expected_hash,
+        source_count=len(items), retained_count=len(items), truncated_count=0, truncated=False,
+        builder_version=PrincipleContextBuilder.BUILDER_VERSION,
+        normalization_version=PrincipleContextBuilder.NORMALIZATION_VERSION,
+        sort_version=PrincipleContextBuilder.SORT_VERSION, estimated_size=len(canonical_json),
+    )

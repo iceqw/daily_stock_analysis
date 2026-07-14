@@ -394,6 +394,9 @@ class AIOpinionRecord(Base):
     audit_metadata_json = Column(Text)
     error_message = Column(Text)
     context_hash = Column(String(64), index=True)
+    principle_snapshot_json = Column(Text)
+    principle_snapshot_hash = Column(String(64), index=True)
+    principle_snapshot_count = Column(Integer, nullable=True)
     retry_count = Column(Integer, nullable=False, default=0)
     feedback_value = Column(String(24), index=True)
     feedback_note = Column(Text)
@@ -405,6 +408,33 @@ class AIOpinionRecord(Base):
     __table_args__ = (
         UniqueConstraint('analysis_history_id', 'version', name='uix_ai_opinion_analysis_version'),
         Index('ix_ai_opinion_analysis_current', 'analysis_history_id', 'is_current', 'created_at'),
+    )
+
+
+class AIOpinionPrincipleRef(Base):
+    """Frozen principle evidence attached to one Opinion version."""
+
+    __tablename__ = 'ai_opinion_principle_refs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ai_opinion_id = Column(Integer, ForeignKey('ai_opinions.id', ondelete='CASCADE'), nullable=False, index=True)
+    principle_id = Column(Integer, nullable=False)
+    principle_version = Column(Integer, nullable=False)
+    category = Column(String(64), nullable=False)
+    severity = Column(String(16), nullable=False)
+    title = Column(String(200), nullable=False)
+    snapshot_json = Column(Text, nullable=False)
+    content_hash = Column(String(64), nullable=False)
+    assessment_status = Column(String(32), nullable=True)
+    relevance = Column(Float, nullable=True)
+    evidence_json = Column(Text, nullable=True)
+    explanation = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=utc_naive_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('ai_opinion_id', 'principle_id', name='uix_ai_opinion_principle_ref_id'),
+        Index('ix_ai_opinion_principle_ref_version', 'principle_id', 'principle_version'),
     )
 
 
@@ -1389,6 +1419,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_investment_journal_source_status_column()
             self._ensure_investment_journal_phase22_schema()
             self._ensure_ai_opinion_phase2_schema()
+            self._ensure_ai_opinion_principle_schema()
             self._ensure_ai_opinion_current_unique_index()
 
             self._initialized = True
@@ -1901,6 +1932,46 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             connection.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS ix_ai_opinion_context_hash "
                 "ON ai_opinions (context_hash)"
+            )
+
+    def _ensure_ai_opinion_principle_schema(self) -> None:
+        """Add principle snapshot columns/table without rewriting historical rows."""
+        if not self._is_sqlite_engine or not inspect(self._engine).has_table("ai_opinions"):
+            return
+        existing = {column["name"] for column in inspect(self._engine).get_columns("ai_opinions")}
+        with self._engine.begin() as connection:
+            for name, definition in {
+                "principle_snapshot_json": "TEXT",
+                "principle_snapshot_hash": "VARCHAR(64)",
+                "principle_snapshot_count": "INTEGER",
+            }.items():
+                if name not in existing:
+                    connection.exec_driver_sql(f"ALTER TABLE ai_opinions ADD COLUMN {name} {definition}")
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS ai_opinion_principle_refs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ai_opinion_id INTEGER NOT NULL REFERENCES ai_opinions(id) ON DELETE CASCADE,
+                    principle_id INTEGER NOT NULL,
+                    principle_version INTEGER NOT NULL,
+                    category VARCHAR(64) NOT NULL,
+                    severity VARCHAR(16) NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    content_hash VARCHAR(64) NOT NULL,
+                    assessment_status VARCHAR(32),
+                    relevance FLOAT,
+                    evidence_json TEXT,
+                    explanation TEXT,
+                    confidence FLOAT,
+                    created_at DATETIME NOT NULL,
+                    CONSTRAINT uix_ai_opinion_principle_ref_id UNIQUE (ai_opinion_id, principle_id)
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_ai_opinion_principle_ref_version "
+                "ON ai_opinion_principle_refs (principle_id, principle_version)"
             )
 
     @classmethod

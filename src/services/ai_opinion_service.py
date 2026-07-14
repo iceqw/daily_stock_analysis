@@ -8,11 +8,14 @@ from typing import Any, Dict, List, Optional
 
 from src.repositories.ai_opinion_repo import (
     AIOpinionRepository,
+    AIOpinionStateTransitionError,
     AIOpinionVersionConflictError,
 )
 from src.services.ai_opinion_context_builder import AnalysisOpinionContextBuilder
+from src.services.principle_context_builder import PrincipleContextBuilder
 from src.services.history_service import HistoryService
 from src.storage import DatabaseManager
+from src.core.trading_calendar import get_market_for_stock
 from src.utils.data_processing import parse_json_field
 
 
@@ -51,10 +54,12 @@ class AIOpinionService:
         repo: Optional[AIOpinionRepository] = None,
         db_manager: Optional[DatabaseManager] = None,
         context_builder: Optional[AnalysisOpinionContextBuilder] = None,
+        principle_context_builder: Optional[PrincipleContextBuilder] = None,
     ):
         self.repo = repo or AIOpinionRepository(db_manager)
         self.db = db_manager or getattr(self.repo, "db", None) or DatabaseManager.get_instance()
         self.context_builder = context_builder or AnalysisOpinionContextBuilder(self.db)
+        self.principle_context_builder = principle_context_builder or PrincipleContextBuilder(self.db)
 
     def create_opinion(
         self,
@@ -116,7 +121,11 @@ class AIOpinionService:
         if self.db.get_analysis_history_by_id(history_id) is None:
             raise AIOpinionNotFoundError(f"Analysis history not found: {history_id}")
         try:
+            history = self.db.get_analysis_history_by_id(history_id)
             self.context_builder.build(history_id)
+            principle_snapshot = self.principle_context_builder.build(
+                market=get_market_for_stock(getattr(history, "code", "")), stock_code=getattr(history, "code", None)
+            )
         except ValueError as exc:
             raise AIOpinionContextUnavailableError(str(exc)) from exc
         if self.repo.has_inflight_generation(history_id):
@@ -124,15 +133,17 @@ class AIOpinionService:
                 f"AI opinion generation already in progress for analysis_history_id={history_id}"
             )
         try:
-            row = self.repo.create_version(
-                {
-                    "analysis_history_id": history_id,
-                    "generation_status": "pending",
-                    "source_status": "available",
-                    "retry_count": 0,
-                    "is_current": False,
-                }
-            )
+            fields = {
+                "analysis_history_id": history_id,
+                "generation_status": "pending",
+                "source_status": "available",
+                "retry_count": 0,
+                "is_current": False,
+            }
+            if hasattr(self.repo, "create_version_with_principles"):
+                row = self.repo.create_version_with_principles(fields, principle_snapshot)
+            else:  # compatibility for narrow repository test doubles
+                row = self.repo.create_version(fields)
         except AIOpinionVersionConflictError as exc:
             raise AIOpinionConflictError(str(exc)) from exc
         return self._serialize(row, analysis_history_available=True)
@@ -147,6 +158,18 @@ class AIOpinionService:
             )
         return self.create_pending_generation(analysis_history_id=row.analysis_history_id)
 
+    def retry_opinion(self, opinion_id: Any) -> Dict[str, Any]:
+        row = self.repo.get(int(opinion_id))
+        if row is None:
+            raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
+        try:
+            retried = self.repo.retry(int(opinion_id))
+        except AIOpinionStateTransitionError as exc:
+            raise AIOpinionConflictError(str(exc)) from exc
+        if retried is None:
+            raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
+        return self._serialize(retried, analysis_history_available=bool(retried.analysis_history_id))
+
     def get_opinion(self, opinion_id: Any) -> Dict[str, Any]:
         row = self.repo.get(int(opinion_id))
         if row is None:
@@ -155,7 +178,9 @@ class AIOpinionService:
             row.analysis_history_id is not None
             and self.db.get_analysis_history_by_id(int(row.analysis_history_id)) is not None
         )
-        return self._serialize(row, analysis_history_available=analysis_history_available)
+        payload = self._serialize(row, analysis_history_available=analysis_history_available)
+        payload["principle_refs"] = [self._serialize_principle_ref(ref) for ref in self.repo.list_principle_refs(row.id)]
+        return payload
 
     def update_feedback(
         self,
@@ -285,6 +310,9 @@ class AIOpinionService:
             "audit_metadata": parse_json_field(row.audit_metadata_json),
             "error_message": row.error_message,
             "context_hash": row.context_hash,
+            "principle_snapshot_hash": getattr(row, "principle_snapshot_hash", None),
+            "principle_snapshot_count": getattr(row, "principle_snapshot_count", None),
+            "principle_snapshot_json": parse_json_field(getattr(row, "principle_snapshot_json", None)),
             "retry_count": row.retry_count,
             "generated_at": row.generated_at.isoformat() if row.generated_at else None,
             "feedback_value": row.feedback_value,
@@ -302,6 +330,24 @@ class AIOpinionService:
                 if analysis_history.created_at else None,
             })
         return payload
+
+    @staticmethod
+    def _serialize_principle_ref(ref) -> Dict[str, Any]:
+        return {
+            "principle_id": ref.principle_id,
+            "principle_version": ref.principle_version,
+            "category": ref.category,
+            "severity": ref.severity,
+            "title": ref.title,
+            "snapshot_json": parse_json_field(ref.snapshot_json),
+            "content_hash": ref.content_hash,
+            "assessment_status": ref.assessment_status,
+            "relevance": ref.relevance,
+            "evidence": parse_json_field(ref.evidence_json),
+            "explanation": ref.explanation,
+            "confidence": ref.confidence,
+            "created_at": ref.created_at.isoformat() if ref.created_at else None,
+        }
 
     @staticmethod
     def _normalize_history_id(value: Any) -> int:

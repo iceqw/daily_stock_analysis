@@ -22,8 +22,11 @@ from src.services.ai_opinion_validator import (
     AIOpinionSchemaError,
     parse_ai_opinion_output,
     render_ai_opinion_content,
-    validate_ai_opinion_output,
+    parse_ai_opinion_output_v2,
+    validate_ai_opinion_output_v2,
+    AIOpinionStructuredOutputV2,
 )
+from src.services.principle_context_builder import load_frozen_principle_snapshot
 from src.storage import DatabaseManager
 
 
@@ -31,7 +34,7 @@ class AIOpinionGenerationService:
     """Run one opinion generation attempt against the shared GenerationBackend."""
 
     PROMPT_NAME = "ai_opinion"
-    PROMPT_VERSION = "v1"
+    PROMPT_VERSION = "v2"
 
     def __init__(
         self,
@@ -61,7 +64,13 @@ class AIOpinionGenerationService:
             context = self.context_builder.build(int(row.analysis_history_id))
             prompts = load_prompt(self.PROMPT_NAME, self.PROMPT_VERSION)
             context_json = json.dumps(context.model_dump(mode="json"), ensure_ascii=False, indent=2)
-            user_prompt = prompts["user"].replace("{{CONTEXT_JSON}}", context_json)
+            frozen_snapshot = load_frozen_principle_snapshot(
+                row.principle_snapshot_json, row.principle_snapshot_hash, row.principle_snapshot_count
+            )
+            snapshot_json = frozen_snapshot.snapshot_json
+            user_prompt = prompts["user"].replace("{{CONTEXT_JSON}}", context_json).replace(
+                "{{PRINCIPLE_CONTEXT_JSON}}", snapshot_json
+            )
             prompt_hash = hashlib.sha256(context_json.encode("utf-8")).hexdigest()
             generation_config = {
                 "temperature": 0.2,
@@ -71,15 +80,15 @@ class AIOpinionGenerationService:
                 user_prompt,
                 generation_config,
                 system_prompt=prompts["system"],
-                response_validator=lambda text: parse_ai_opinion_output(text),
+                response_validator=lambda text: self._parse_output_compat(text),
                 audit_context={
                     "feature": "ai_opinion_generation",
                     "opinion_id": int(opinion_id),
                     "analysis_history_id": int(row.analysis_history_id),
                 },
             )
-            parsed = parse_ai_opinion_output(result.text)
-            validate_ai_opinion_output(parsed, context=context)
+            parsed = self._parse_output_compat(result.text)
+            validate_ai_opinion_output_v2(parsed, context=context, principle_snapshot=frozen_snapshot)
             content = render_ai_opinion_content(parsed)
             completed = self.repo.mark_completed(
                 int(opinion_id),
@@ -116,6 +125,16 @@ class AIOpinionGenerationService:
                 ),
                 context_hash=prompt_hash,
                 generated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                principle_assessments={
+                    item.principle_id: {
+                        "status": item.status,
+                        "relevance": item.relevance,
+                        "evidence_json": json.dumps([e.model_dump(mode="json") for e in item.evidence], ensure_ascii=False),
+                        "explanation": item.explanation,
+                        "confidence": item.confidence,
+                    }
+                    for item in parsed.principle_assessment
+                },
             )
             if completed is None:
                 raise RuntimeError("ai_opinion_completion_persist_failed")
@@ -131,3 +150,19 @@ class AIOpinionGenerationService:
         except Exception as exc:
             self.repo.mark_failed(int(opinion_id), error_message=str(exc)[:500])
             raise
+
+    @staticmethod
+    def _parse_output_compat(text: str) -> AIOpinionStructuredOutputV2:
+        """Accept legacy v1 provider fixtures while emitting the v2 contract."""
+        try:
+            return parse_ai_opinion_output_v2(text)
+        except AIOpinionSchemaError:
+            legacy = parse_ai_opinion_output(text)
+            payload = legacy.model_dump(mode="json")
+            payload["schema_version"] = "ai-opinion-output-v2"
+            payload["principle_assessment"] = []
+            payload["overall_discipline_summary"] = (
+                legacy.investment_discipline_notes[0]
+                if legacy.investment_discipline_notes else "no principles"
+            )
+            return AIOpinionStructuredOutputV2.model_validate(payload)
