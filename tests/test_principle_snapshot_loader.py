@@ -28,7 +28,24 @@ def _row():
     )
 
 
+def _row_without_rationale():
+    row = _row()
+    row.version.rationale = None
+    return row
+
+
 class FrozenSnapshotLoaderTest(unittest.TestCase):
+    def test_empty_rationale_is_normalized_and_restored(self):
+        snapshot = PrincipleContextBuilder(repository=_Repo([_row_without_rationale()])).build()
+
+        self.assertEqual(snapshot.items[0].rationale, "")
+        restored = load_frozen_principle_snapshot(
+            snapshot.snapshot_json, snapshot.snapshot_hash, snapshot.retained_count
+        )
+
+        self.assertEqual(restored.items[0].rationale, "")
+        self.assertEqual(restored.snapshot_hash, snapshot.snapshot_hash)
+
     def test_restore_and_empty_snapshot(self):
         snapshot = PrincipleContextBuilder(repository=_Repo([_row()])).build()
         restored = load_frozen_principle_snapshot(snapshot.snapshot_json, snapshot.snapshot_hash, snapshot.retained_count)

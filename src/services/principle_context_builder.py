@@ -383,7 +383,7 @@ def load_frozen_principle_snapshot(
         elif scope_type == "stock" and (not scope.market or not scope.stock_code):
             raise PrincipleContextValidationError("frozen stock scope is incomplete")
         values = {key: PrincipleContextBuilder._normalize_text(raw[key]) for key in ("category", "severity", "title", "statement", "rationale")}
-        if not all(values.values()):
+        if not all(values[key] for key in ("category", "severity", "title", "statement")):
             raise PrincipleContextValidationError("frozen principle text is incomplete")
         item_payload = {
             "principle_id": principle_id, "principle_version": principle_version,
