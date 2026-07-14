@@ -1,6 +1,6 @@
 # M2-1：原则感知 AI Opinion 设计与数据契约
 
-状态：待审查
+状态：M2-2 已完成，待审查
 
 本文档只定义 M-2 的设计与数据契约，不包含生产代码、数据库迁移、API 实现、前端实现或 LLM 调用。
 
@@ -13,7 +13,7 @@
 
 审计发现：当前 `origin/main` 的工作树不包含 `investment_principles`、`ai_opinions`、M-1 Repository/Service/API 文件；这些文件存在于上述历史提交，但 `32a34e7` 不是当前 `main` 的祖先。因此，本文把历史实现作为已存在设计的审阅材料，不把它误写成当前 `origin/main` 已部署的运行时契约。后续实现前必须先确认 M-1/AI Opinion 代码将以何种方式回到目标基线。
 
-当前基线中可直接确认的数据库约定是：SQLite/SQLAlchemy ORM 位于 `src/storage.py`，通过 `Base.metadata.create_all()` 建表，并用 `schema_migrations` 记录 `CURRENT_SCHEMA_VERSION`；当前主线的 `analysis_history` 包含 `context_snapshot` 等历史分析字段。历史 M-1 实现的 schema marker 为 `2026-07-13-investment-principles-m1`。
+当前基线中可直接确认的数据库约定是：SQLite/SQLAlchemy ORM 位于 `src/storage.py`，通过 `Base.metadata.create_all()` 建表，并用 `schema_migrations` 记录 `CURRENT_SCHEMA_VERSION`；当前主线的 `analysis_history` 包含 `context_snapshot` 等历史分析字段。M2-0 恢复后的 schema marker 为 `2026-07-14-m1-ai-opinion-baseline`。
 
 ## M2-0：恢复并验收 M-1 / AI Opinion 基线
 
@@ -391,9 +391,22 @@ M-2 完成后，每条 AI Opinion 必须能够回答：
 使用了哪个原则版本？
 原则快照和 hash 是否可复现？
 每条原则的判断状态是什么？
+
 证据和解释是什么？
 是否存在冲突或证据不足？
 为什么旧 Opinion 不受新原则影响？
 ```
 
 达到这些条件的前提是：原则引用与 Opinion 同事务保存，retry 使用启动时快照，regenerate 创建新版本，历史 refs 不因原则生命周期变化而丢失，并且模型输出不能越过白名单和安全校验。
+
+## M2-2 实现事实更新
+
+M2-0 已在当前 `origin/main` 完成恢复与验收。M2-2 的实际 Builder 路径为 `src/services/principle_context_builder.py`，Repository 只增加了 `list_active_current()` 只读查询，用于校验 active 身份的 `current_version` 恰好对应一个版本。
+
+Builder 输出 `PrincipleContextSnapshot`，包含 `items`、`snapshot_json`、`snapshot_hash`、`source_count`、`retained_count`、`truncated_count`、`truncated`、builder/规范化/排序版本和估算字符数；每条 `PrincipleSnapshotItem` 使用真实 M-1 字段 `principle_id`、`principle_version`、`category`、`severity`、`scope`、`title`、`statement`、`rationale` 与 `content_hash`。
+
+规范化使用 Unicode NFC、统一 `\r\n`/`\r` 为 `\n`、首尾去空白、缺失 `rationale` 归一为空字符串；canonical JSON 使用 UTF-8、固定字段顺序和无空白分隔符。逐条 hash 为不含 `content_hash` 的规范化对象 SHA-256，集合 hash 为保留 items 数组（含逐条 hash）的 canonical JSON SHA-256；空集合固定为 `snapshot_json="[]"` 及 `SHA-256(UTF-8("[]"))`。
+
+排序为显式 `hard` → `soft` → `advisory`，未知 severity 置于已知值之后，再按 severity、category、principle ID、version 稳定排序。scope 只实现当前 M-1 的 global/market/stock、market 和 stock code 过滤；不引入 asset type、report type 或其他新数据源。
+
+第一版限额为最多 20 条、statement/rationale 各 2,000 字符、正文合计 12,000 字符；截断在规范化和排序之后执行，并显式记录 retained/truncated 计数。该阶段不接入 AI Opinion 生成、Prompt、Schema、Validator、持久化、API、前端或 M2-3 以后内容。
