@@ -62,6 +62,9 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
   const selectedIdRef = useRef<number | null>(null);
   const inFlightRef = useRef<AIOpinionListItem | null>(null);
   const actionInFlightRef = useRef(false);
+  const actionRequestRef = useRef(0);
+  const currentHistoryIdRef = useRef(analysisHistoryId);
+  currentHistoryIdRef.current = analysisHistoryId;
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -118,7 +121,6 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
         selectedIdRef.current = nextId;
         setSelectedId(nextId);
         setSelectedDetail(null);
-        if (nextId !== null) void loadDetail(nextId, generation);
       }
       setError(null);
       if (fromPolling && previousInFlight && !isInFlight(response.items.find((item) => item.id === previousInFlight.id))) {
@@ -139,6 +141,9 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
 
   useEffect(() => {
     const generation = ++viewGenerationRef.current;
+    actionRequestRef.current += 1;
+    actionInFlightRef.current = false;
+    setSubmitting(false);
     stopPolling();
     selectedIdRef.current = null;
     inFlightRef.current = null;
@@ -167,6 +172,12 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
     if (actionInFlightRef.current || operationsDisabled) return;
     const targetId = selectedOpinion?.id;
     if ((action === 'retry' || action === 'regenerate') && targetId === undefined) return;
+    const generation = viewGenerationRef.current;
+    const historyId = analysisHistoryId;
+    const requestId = ++actionRequestRef.current;
+    const isCurrentAction = () => generation === viewGenerationRef.current
+      && historyId === currentHistoryIdRef.current
+      && requestId === actionRequestRef.current;
     actionInFlightRef.current = true;
     setSubmitting(true);
     setError(null);
@@ -176,20 +187,23 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
         : action === 'retry'
           ? await aiOpinionsApi.retry(targetId as number)
           : await aiOpinionsApi.regenerate(targetId as number);
+      if (!isCurrentAction()) return;
       const nextListItem: AIOpinionListItem = accepted.opinion;
       setOpinions((current) => [nextListItem, ...current.filter((item) => item.id !== nextListItem.id)]);
       inFlightRef.current = nextListItem;
       selectedIdRef.current = nextListItem.id;
       setSelectedId(nextListItem.id);
       setSelectedDetail(accepted.opinion);
-      schedulePoll(viewGenerationRef.current);
+      schedulePoll(generation);
     } catch (err) {
-      setError(getParsedApiError(err));
+      if (isCurrentAction()) setError(getParsedApiError(err));
     } finally {
-      actionInFlightRef.current = false;
-      setSubmitting(false);
+      if (isCurrentAction()) {
+        actionInFlightRef.current = false;
+        setSubmitting(false);
+      }
     }
-  }, [analysisHistoryId, operationsDisabled, schedulePoll, selectedOpinion]);
+  }, [analysisHistoryId, currentHistoryIdRef, operationsDisabled, schedulePoll, selectedOpinion]);
 
   if (loading) return <Card padding="md"><p className="text-sm text-secondary-text">Loading AI Opinion...</p></Card>;
   if (error && !opinions.length) return <Card padding="md"><InlineAlert variant="danger" title="AI Opinion unavailable" message={error.message} action={<Button variant="secondary" size="sm" onClick={() => void refreshList(true, viewGenerationRef.current)}>Retry</Button>} /></Card>;
@@ -197,7 +211,12 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
   const selectedStatus = selectedOpinion?.generationStatus;
   const detail = selectedDetail && selectedDetail.id === selectedId ? selectedDetail : null;
   const detailOutput = detail || ({ outputJson: {} } as AIOpinionDetail);
-  const summary = detail?.content || detail?.conclusion || outputValue(detailOutput, 'summary');
+  const structuredSummaryValue = outputValue(detailOutput, 'summary');
+  const structuredSummary = typeof structuredSummaryValue === 'string'
+    ? structuredSummaryValue
+    : typeof detail?.conclusion === 'string' ? detail.conclusion : null;
+  const legacyContent = structuredSummary ? null : detail?.content || null;
+  const showStructuredSections = Boolean(structuredSummary);
   const keyFindings = asStrings(outputValue(detailOutput, 'keyFindings', 'key_findings'));
   const supportingEvidence = detail?.evidence?.map((item) => item.statement || '').filter(Boolean) || asStrings(outputValue(detailOutput, 'supportingEvidence', 'supporting_evidence'));
   const risks = detail?.risks || asStrings(outputValue(detailOutput, 'risks'));
@@ -233,22 +252,25 @@ export const AIOpinionPanel: React.FC<{ analysisHistoryId: number }> = ({ analys
       {selectedStatus === 'generating' ? <p className="text-sm text-secondary-text">Please wait while the opinion is generated.</p> : null}
       {selectedStatus === 'failed' || selectedStatus === 'rejected' ? <p className="text-sm text-danger">{detail?.errorMessage || selectedOpinion.errorMessage || (selectedStatus === 'rejected' ? 'The output was rejected by validation or safety checks.' : 'The generation request failed.')}</p> : null}
       {selectedStatus === 'completed' && detail ? <div className="space-y-4">
-        {typeof summary === 'string' ? <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{summary}</p> : null}
-        <ListSection title="Key findings" values={keyFindings} />
-        <ListSection title="Supporting evidence" values={supportingEvidence} />
-        <ListSection title="Risks" values={risks} />
-        <ListSection title="Uncertainties" values={uncertainties} />
-        <ListSection title="Limitations" values={limitations} />
-        <ListSection title="Things to watch" values={thingsToWatch} />
-        <ListSection title="Investment discipline notes" values={disciplineNotes} />
-        {typeof disciplineSummary === 'string' ? <p className="text-sm text-secondary-text"><strong>Overall discipline summary:</strong> {disciplineSummary}</p> : null}
-        {typeof disclaimer === 'string' ? <p className="text-xs text-muted-text"><strong>Disclaimer:</strong> {disclaimer}</p> : null}
-        <PrincipleAssessments refs={detail.principleRefs.map((ref) => ({
+        {structuredSummary ? <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{structuredSummary}</p> : null}
+        {legacyContent ? <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{legacyContent}</p> : null}
+        {showStructuredSections ? <>
+          <ListSection title="Key findings" values={keyFindings} />
+          <ListSection title="Supporting evidence" values={supportingEvidence} />
+          <ListSection title="Risks" values={risks} />
+          <ListSection title="Uncertainties" values={uncertainties} />
+          <ListSection title="Limitations" values={limitations} />
+          <ListSection title="Things to watch" values={thingsToWatch} />
+          <ListSection title="Investment discipline notes" values={disciplineNotes} />
+          {typeof disciplineSummary === 'string' ? <p className="text-sm text-secondary-text"><strong>Overall discipline summary:</strong> {disciplineSummary}</p> : null}
+          {typeof disclaimer === 'string' ? <p className="text-xs text-muted-text"><strong>Disclaimer:</strong> {disclaimer}</p> : null}
+        </> : null}
+        {showStructuredSections ? <PrincipleAssessments refs={detail.principleRefs.map((ref) => ({
           principle_id: ref.principleId, principle_version: ref.principleVersion, category: ref.category,
           severity: ref.severity, title: ref.title, assessment_status: ref.assessmentStatus,
           evidence: ref.evidence?.map((item) => ({ statement: item.statement, source_ref: item.sourceRef })),
           explanation: ref.explanation, confidence: ref.confidence,
-        }))} />
+        }))} /> : null}
         <p className="text-xs text-muted-text">Provider: {detail.provider || '--'} · Model: {detail.model || '--'} · Version {detail.version}{detail.isCurrent ? ' · Current' : ''}</p>
         <p className="text-xs text-muted-text">Created: {detail.createdAt || '--'} · Generated: {detail.generatedAt || '--'}</p>
       </div> : null}

@@ -31,6 +31,16 @@ const detail = (item: AIOpinionListItem = listItem()): AIOpinionDetail => ({
 const listResponse = (items: AIOpinionListItem[]) => ({ items, total: items.length, page: 1, pageSize: 100 });
 const accepted = (opinion: AIOpinionDetail) => ({ opinion, accepted: true, taskId: 'task', traceId: 'trace', taskStatus: 'pending' });
 
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 describe('AIOpinionPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,6 +69,7 @@ describe('AIOpinionPanel', () => {
     render(<AIOpinionPanel analysisHistoryId={42} />);
     expect(await screen.findByText('Capital protection')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith(7);
+    expect(api.get).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Finding')).toBeInTheDocument();
     expect(screen.getByText('Uncertainty')).toBeInTheDocument();
     expect(screen.getByText('Limitation')).toBeInTheDocument();
@@ -78,6 +89,7 @@ describe('AIOpinionPanel', () => {
     expect(await screen.findByText('Generation failed')).toBeInTheDocument();
     fireEvent.change(selector, { target: { value: '2' } });
     expect(await screen.findByText('Queued for generation')).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledTimes(3);
   });
 
   it('targets the selected failed version for retry and the selected completed version for regenerate', async () => {
@@ -100,6 +112,55 @@ describe('AIOpinionPanel', () => {
     render(<AIOpinionPanel analysisHistoryId={42} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Regenerate' }));
     await waitFor(() => expect(api.regenerate).toHaveBeenCalledWith(9));
+  });
+
+  it('does not let a delayed action from history A update history B', async () => {
+    const action = deferred<ReturnType<typeof accepted>>();
+    const historyAOpinion = detail(listItem({ id: 101, analysisHistoryId: 41, generationStatus: 'pending' }));
+    const historyBItem = listItem({ id: 202, analysisHistoryId: 42, version: 1 });
+    api.generate.mockReturnValue(action.promise);
+    const view = render(<AIOpinionPanel analysisHistoryId={41} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate AI Opinion' }));
+    api.listByAnalysisHistory.mockResolvedValue(listResponse([historyBItem]));
+    api.get.mockResolvedValue(detail(historyBItem));
+    view.rerender(<AIOpinionPanel analysisHistoryId={42} />);
+    expect(await screen.findByText('Capital protection')).toBeInTheDocument();
+    action.resolve(accepted(historyAOpinion));
+    await act(async () => { await action.promise; });
+    expect(screen.queryByText('Version 101')).not.toBeInTheDocument();
+    expect(api.listByAnalysisHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a delayed action error from history A update history B', async () => {
+    const action = deferred<ReturnType<typeof accepted>>();
+    const historyBItem = listItem({ id: 404, analysisHistoryId: 42 });
+    api.generate.mockReturnValue(action.promise);
+    const view = render(<AIOpinionPanel analysisHistoryId={41} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate AI Opinion' }));
+    api.listByAnalysisHistory.mockResolvedValue(listResponse([historyBItem]));
+    api.get.mockResolvedValue(detail(historyBItem));
+    view.rerender(<AIOpinionPanel analysisHistoryId={42} />);
+    expect(await screen.findByText('Capital protection')).toBeInTheDocument();
+    action.reject(new Error('history A action failed'));
+    await act(async () => {
+      await expect(action.promise).rejects.toThrow('history A action failed');
+    });
+    expect(screen.queryByText('history A action failed')).not.toBeInTheDocument();
+  });
+
+  it('does not render full legacy markdown when structured summary is available', async () => {
+    const item = listItem({ id: 303 });
+    const realDetail = detail(item);
+    realDetail.content = '## Summary\nSummary text\n\n## Key Findings\n- Finding\n\n## Risks\n- Risk';
+    realDetail.outputJson = { summary: 'Summary text', keyFindings: ['Finding'], risks: ['Risk'] };
+    api.listByAnalysisHistory.mockResolvedValue(listResponse([item]));
+    api.get.mockResolvedValue(realDetail);
+    render(<AIOpinionPanel analysisHistoryId={42} />);
+    expect(await screen.findByText('Summary text')).toBeInTheDocument();
+    expect(screen.getAllByText('Summary text')).toHaveLength(1);
+    expect(screen.getAllByText('Finding')).toHaveLength(1);
+    expect(screen.getAllByText('Risk')).toHaveLength(1);
+    expect(screen.queryByText(/## Summary/)).not.toBeInTheDocument();
   });
 
   it('continues polling a new non-current version while an old current version is completed', async () => {
