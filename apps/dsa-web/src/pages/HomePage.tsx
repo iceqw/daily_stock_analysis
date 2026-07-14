@@ -16,7 +16,6 @@ import { MarketReviewReportView } from '../components/report/MarketReviewReportV
 import { ReportSummary } from '../components/report/ReportSummary';
 import { RunFlowPanel } from '../components/run-flow';
 import { TaskPanel } from '../components/tasks';
-import { inferStockMarket } from '../components/stock-detail';
 import { useDashboardLifecycle, useHomeDashboardState } from '../hooks';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
@@ -447,20 +446,6 @@ const HomePage: React.FC = () => {
     const name = selectedReport.meta.stockName;
     const rid = selectedReport.meta.id;
     navigate(`/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`);
-  }, [navigate, selectedReport]);
-
-  const handleOpenStockArchive = useCallback(() => {
-    if (selectedReport?.meta.id === undefined || selectedReport.meta.reportType === 'market_review') {
-      return;
-    }
-
-    const code = selectedReport.meta.stockCode;
-    const market = inferStockMarket(code, selectedReport.meta.marketPhaseSummary?.market);
-    const params = new URLSearchParams({
-      market,
-      recordId: String(selectedReport.meta.id),
-    });
-    navigate(`/stocks/${encodeURIComponent(code)}?${params.toString()}`);
   }, [navigate, selectedReport]);
 
   const handleReanalyze = useCallback(() => {
@@ -964,15 +949,6 @@ const HomePage: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         {t('home.reanalyze')}
-                      </Button>
-                      <Button
-                        variant="home-action-ai"
-                        size="sm"
-                        disabled={selectedReport.meta.id === undefined}
-                        onClick={handleOpenStockArchive}
-                      >
-                        <BarChart3 className="h-4 w-4" />
-                        {uiLanguage === 'zh' ? 'AI Opinion / 投资日志' : 'AI Opinion / Journal'}
                       </Button>
                       <Button
                         variant="home-action-ai"
