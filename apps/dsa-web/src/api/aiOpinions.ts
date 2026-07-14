@@ -29,6 +29,16 @@ export interface AIOpinionListItem {
   isCurrent: boolean;
   generationStatus: AIOpinionGenerationStatus;
   sourceStatus: 'available' | 'deleted';
+  errorMessage?: string | null;
+  retryCount: number;
+  generatedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  analysisStockCode?: string | null;
+  analysisStockName?: string | null;
+}
+
+export interface AIOpinionDetail extends AIOpinionListItem {
   title?: string | null;
   content?: string | null;
   conclusion?: string | null;
@@ -39,18 +49,18 @@ export interface AIOpinionListItem {
   watchItems?: string[] | null;
   model?: string | null;
   provider?: string | null;
+  temperature?: number | null;
   promptVersion?: string | null;
-  errorMessage?: string | null;
+  principleSnapshotHash?: string | null;
+  principleSnapshotCount?: number | null;
+  principleSnapshotJson?: unknown;
   principleRefs: AIOpinionPrincipleRef[];
-  retryCount: number;
-  generatedAt?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-  analysisStockCode?: string | null;
-  analysisStockName?: string | null;
+  auditMetadata?: unknown;
+  contextHash?: string | null;
+  feedbackValue?: 'useful' | 'not_useful' | null;
+  feedbackNote?: string | null;
+  analysisCreatedAt?: string | null;
 }
-
-export type AIOpinionDetail = AIOpinionListItem;
 
 export interface AIOpinionGenerateAccepted {
   opinion: AIOpinionDetail;
@@ -68,10 +78,12 @@ export interface AIOpinionGenerationStatusResponse {
   pageSize: number;
 }
 
-const normalizeItem = (value: unknown): AIOpinionDetail => {
-  const item = toCamelCase<AIOpinionDetail>(value);
-  return { ...item, principleRefs: item.principleRefs || [] };
-};
+const normalizeListItem = (value: unknown): AIOpinionListItem => toCamelCase<AIOpinionListItem>(value);
+
+const normalizeDetail = (value: unknown): AIOpinionDetail => ({
+  ...toCamelCase<AIOpinionDetail>(value),
+  principleRefs: toCamelCase<AIOpinionDetail>(value).principleRefs || [],
+});
 
 export const aiOpinionsApi = {
   listByAnalysisHistory: async (analysisHistoryId: number): Promise<AIOpinionGenerationStatusResponse> => {
@@ -80,7 +92,7 @@ export const aiOpinionsApi = {
     });
     const data = toCamelCase<{ items?: unknown[]; total: number; page: number; pageSize: number }>(response.data);
     return {
-      items: (data.items || []).map(normalizeItem),
+      items: (data.items || []).map(normalizeListItem),
       total: data.total,
       page: data.page,
       pageSize: data.pageSize,
@@ -89,21 +101,24 @@ export const aiOpinionsApi = {
 
   get: async (opinionId: number): Promise<AIOpinionDetail> => {
     const response = await apiClient.get(`/api/v1/ai-opinions/${opinionId}`);
-    return normalizeItem(response.data);
+    return normalizeDetail(response.data);
   },
 
   generate: async (analysisHistoryId: number): Promise<AIOpinionGenerateAccepted> => {
     const response = await apiClient.post(`/api/v1/ai-opinions/generate/${analysisHistoryId}`);
-    return toCamelCase<AIOpinionGenerateAccepted>(response.data);
+    const accepted = toCamelCase<AIOpinionGenerateAccepted>(response.data);
+    return { ...accepted, opinion: normalizeDetail(accepted.opinion) };
   },
 
   retry: async (opinionId: number): Promise<AIOpinionGenerateAccepted> => {
     const response = await apiClient.post(`/api/v1/ai-opinions/${opinionId}/retry`);
-    return toCamelCase<AIOpinionGenerateAccepted>(response.data);
+    const accepted = toCamelCase<AIOpinionGenerateAccepted>(response.data);
+    return { ...accepted, opinion: normalizeDetail(accepted.opinion) };
   },
 
   regenerate: async (opinionId: number): Promise<AIOpinionGenerateAccepted> => {
     const response = await apiClient.post(`/api/v1/ai-opinions/${opinionId}/regenerate`);
-    return toCamelCase<AIOpinionGenerateAccepted>(response.data);
+    const accepted = toCamelCase<AIOpinionGenerateAccepted>(response.data);
+    return { ...accepted, opinion: normalizeDetail(accepted.opinion) };
   },
 };

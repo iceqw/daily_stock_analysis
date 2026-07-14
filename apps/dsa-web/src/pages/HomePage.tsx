@@ -1034,7 +1034,7 @@ const HomePage: React.FC = () => {
                         actionMessage: watchlistState.actionMessage,
                       }}
                     />
-                    {selectedReport.meta.id !== undefined ? (
+                    {selectedReport.meta.id !== undefined && selectedReport.meta.reportType !== 'market_review' ? (
                       <AIOpinionPanel analysisHistoryId={selectedReport.meta.id} />
                     ) : null}
                   </div>
