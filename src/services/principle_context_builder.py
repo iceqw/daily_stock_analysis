@@ -30,12 +30,28 @@ class PrincipleContextValidationError(PrincipleContextError):
 
 
 @dataclass(frozen=True)
+class PrincipleScope:
+    """Immutable scope value carried by a snapshot item."""
+
+    type: str
+    market: Optional[str]
+    stock_code: Optional[str]
+
+    def to_dict(self) -> Dict[str, Optional[str]]:
+        return {
+            "type": self.type,
+            "market": self.market,
+            "stock_code": self.stock_code,
+        }
+
+
+@dataclass(frozen=True)
 class PrincipleSnapshotItem:
     principle_id: int
     principle_version: int
     category: str
     severity: str
-    scope: Dict[str, Optional[str]]
+    scope: PrincipleScope
     title: str
     statement: str
     rationale: str
@@ -49,7 +65,7 @@ class PrincipleSnapshotItem:
             "principle_version": self.principle_version,
             "category": self.category,
             "severity": self.severity,
-            "scope": self.scope,
+            "scope": self.scope.to_dict(),
             "title": self.title,
             "statement": self.statement,
             "rationale": self.rationale,
@@ -59,7 +75,7 @@ class PrincipleSnapshotItem:
 
 @dataclass(frozen=True)
 class PrincipleContextSnapshot:
-    items: List[PrincipleSnapshotItem]
+    items: tuple[PrincipleSnapshotItem, ...]
     snapshot_json: str
     snapshot_hash: str
     source_count: int
@@ -156,28 +172,29 @@ class PrincipleContextBuilder:
         truncated_count = 0
         text_truncated = False
         used_chars = 0
-        for item in normalized:
+        for index, item in enumerate(normalized):
             if len(retained) >= self.max_principles:
-                truncated_count += 1
-                continue
+                truncated_count = len(normalized) - index
+                break
             item_size = len(item.title) + len(item.statement) + len(item.rationale)
             if used_chars + item_size > self.max_total_chars:
-                truncated_count += 1
-                continue
+                truncated_count = len(normalized) - index
+                break
             retained.append(item)
             used_chars += item_size
             if item.text_truncated:
                 text_truncated = True
 
-        payload = [item.to_dict() for item in retained]
+        retained_items = tuple(retained)
+        payload = [item.to_dict() for item in retained_items]
         snapshot_json = self._canonical_json(payload)
         snapshot_hash = self._sha256(snapshot_json)
         return PrincipleContextSnapshot(
-            items=retained,
+            items=retained_items,
             snapshot_json=snapshot_json,
             snapshot_hash=snapshot_hash,
             source_count=len(rows),
-            retained_count=len(retained),
+            retained_count=len(retained_items),
             truncated_count=truncated_count,
             truncated=bool(text_truncated or truncated_count),
             builder_version=self.BUILDER_VERSION,
@@ -233,16 +250,14 @@ class PrincipleContextBuilder:
             "principle_version": principle_version,
             "category": category,
             "severity": severity,
-            "scope": {
-                "type": scope_type,
-                "market": scope_market,
-                "stock_code": scope_stock_code,
-            },
+            "scope": PrincipleScope(scope_type, scope_market, scope_stock_code),
             "title": title,
             "statement": statement,
             "rationale": rationale,
         }
-        content_hash = self._sha256(self._canonical_json(payload))
+        hash_payload = dict(payload)
+        hash_payload["scope"] = payload["scope"].to_dict()
+        content_hash = self._sha256(self._canonical_json(hash_payload))
         return PrincipleSnapshotItem(
             content_hash=content_hash,
             text_truncated=(len(raw_statement) > len(statement) or len(raw_rationale) > len(rationale)),
@@ -267,14 +282,14 @@ class PrincipleContextBuilder:
         }
 
     @staticmethod
-    def _scope_matches(scope: Mapping[str, Optional[str]], analysis: Mapping[str, Optional[str]]) -> bool:
-        if scope["type"] == "global":
+    def _scope_matches(scope: PrincipleScope, analysis: Mapping[str, Optional[str]]) -> bool:
+        if scope.type == "global":
             return True
-        if not analysis.get("market") or scope.get("market") != analysis.get("market"):
+        if not analysis.get("market") or scope.market != analysis.get("market"):
             return False
-        if scope["type"] == "market":
+        if scope.type == "market":
             return True
-        return bool(analysis.get("stock_code") and scope.get("stock_code") == analysis.get("stock_code"))
+        return bool(analysis.get("stock_code") and scope.stock_code == analysis.get("stock_code"))
 
     @classmethod
     def _sort_key(cls, item: PrincipleSnapshotItem) -> tuple[Any, ...]:

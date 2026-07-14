@@ -146,7 +146,7 @@ class PrincipleContextBuilderTestCase(unittest.TestCase):
         self._create_active(title="CN market", scope_type="market", scope_market="cn")
         self._create_active(title="AAPL", scope_type="stock", scope_market="us", scope_stock_code="AAPL")
         result = PrincipleContextBuilder(repository=self.repo).build(market="us", stock_code="MSFT")
-        self.assertEqual(result.items, [])
+        self.assertEqual(result.items, ())
         self.assertEqual(result.source_count, 2)
         self.assertFalse(result.truncated)
 
@@ -194,7 +194,7 @@ class PrincipleContextBuilderTestCase(unittest.TestCase):
 
     def test_empty_principles_have_deterministic_empty_hash(self):
         result = PrincipleContextBuilder(repository=_FakeRepository()).build()
-        self.assertEqual(result.items, [])
+        self.assertEqual(result.items, ())
         self.assertEqual(result.snapshot_json, "[]")
         self.assertEqual(result.snapshot_hash, hashlib.sha256(b"[]").hexdigest())
         self.assertEqual(result.source_count, 0)
@@ -262,6 +262,41 @@ class PrincipleContextBuilderTestCase(unittest.TestCase):
                 "title", "statement", "rationale", "content_hash",
             ],
         )
+
+    def test_snapshot_is_deeply_immutable(self):
+        result = PrincipleContextBuilder(repository=_FakeRepository([_row()])).build()
+        with self.assertRaises(AttributeError):
+            result.items.append(result.items[0])
+        with self.assertRaises((AttributeError, TypeError)):
+            result.items = ()
+        with self.assertRaises((AttributeError, TypeError)):
+            result.items[0].scope.market = "cn"
+
+        original_json = result.snapshot_json
+        original_hash = result.snapshot_hash
+        payload = result.to_dict()
+        payload["items"].append(payload["items"][0])
+        payload["items"][0]["scope"]["market"] = "cn"
+        self.assertEqual(result.snapshot_json, original_json)
+        self.assertEqual(result.snapshot_hash, original_hash)
+        self.assertEqual(len(result.items), 1)
+
+    def test_total_budget_keeps_only_sorted_prefix(self):
+        rows = [
+            _row(3, severity="soft", title="soft", statement="s"),
+            _row(2, severity="hard", title="hard-large", statement="xxxxxxxxxxxx"),
+            _row(1, severity="hard", title="hard", statement="h"),
+        ]
+        first = PrincipleContextBuilder(
+            repository=_FakeRepository(rows), max_total_chars=8
+        ).build()
+        second = PrincipleContextBuilder(
+            repository=_FakeRepository(reversed(rows)), max_total_chars=8
+        ).build()
+        self.assertEqual([item.principle_id for item in first.items], [1])
+        self.assertEqual(first.items, second.items)
+        self.assertEqual(first.truncated_count, 2)
+        self.assertTrue(first.truncated)
 
 
 if __name__ == "__main__":
