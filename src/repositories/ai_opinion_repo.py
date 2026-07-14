@@ -304,6 +304,23 @@ class AIOpinionRepository:
             write_operation,
         )
 
+    def retry(self, opinion_id: int) -> Optional[AIOpinionRecord]:
+        """Return a failed/rejected Opinion to pending without changing its snapshot/version."""
+        def write_operation(session):
+            row = session.execute(select(AIOpinionRecord).where(AIOpinionRecord.id == int(opinion_id)).limit(1)).scalar_one_or_none()
+            if row is None:
+                return None
+            if row.generation_status not in {"failed", "rejected"}:
+                raise AIOpinionStateTransitionError(f"ai_opinion_status_not_retryable:{row.generation_status}")
+            row.generation_status = "pending"
+            row.error_message = None
+            row.updated_at = utc_naive_now()
+            session.flush()
+            session.refresh(row)
+            session.expunge(row)
+            return row
+        return self.db._run_write_transaction(f"retry_ai_opinion[{int(opinion_id)}]", write_operation)
+
     def mark_completed(
         self,
         opinion_id: int,

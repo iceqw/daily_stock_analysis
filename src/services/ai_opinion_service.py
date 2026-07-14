@@ -157,6 +157,15 @@ class AIOpinionService:
             )
         return self.create_pending_generation(analysis_history_id=row.analysis_history_id)
 
+    def retry_opinion(self, opinion_id: Any) -> Dict[str, Any]:
+        row = self.repo.get(int(opinion_id))
+        if row is None:
+            raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
+        retried = self.repo.retry(int(opinion_id))
+        if retried is None:
+            raise AIOpinionNotFoundError(f"AI opinion not found: {opinion_id}")
+        return self._serialize(retried, analysis_history_available=bool(retried.analysis_history_id))
+
     def get_opinion(self, opinion_id: Any) -> Dict[str, Any]:
         row = self.repo.get(int(opinion_id))
         if row is None:
