@@ -28,6 +28,10 @@ class InvestmentPrincipleConcurrencyError(InvestmentPrincipleRepositoryError):
     """Raised when an optimistic expected version or status is stale."""
 
 
+class InvestmentPrincipleCurrentVersionError(InvestmentPrincipleRepositoryError):
+    """Raised when an identity does not have exactly one current version."""
+
+
 @dataclass
 class InvestmentPrincipleDetail:
     principle: InvestmentPrinciple
@@ -48,6 +52,14 @@ class InvestmentPrincipleListItem:
     principle: InvestmentPrinciple
     version: InvestmentPrincipleVersion
     source_count: int
+
+
+@dataclass
+class InvestmentPrincipleCurrentItem:
+    """An active identity paired with its exactly-one current version."""
+
+    principle: InvestmentPrinciple
+    version: InvestmentPrincipleVersion
 
 
 @dataclass
@@ -143,6 +155,31 @@ class InvestmentPrincipleRepository:
                 )
                 .limit(1)
             ).scalar_one_or_none()
+
+    def list_active_current(self) -> List[InvestmentPrincipleCurrentItem]:
+        """Read active identities and validate each current-version pointer."""
+        with self.db.get_session() as session:
+            principles = list(session.execute(
+                select(InvestmentPrinciple)
+                .where(InvestmentPrinciple.status == "active")
+                .order_by(asc(InvestmentPrinciple.id))
+            ).scalars().all())
+            rows: List[InvestmentPrincipleCurrentItem] = []
+            for principle in principles:
+                versions = list(session.execute(
+                    select(InvestmentPrincipleVersion)
+                    .where(
+                        InvestmentPrincipleVersion.principle_id == principle.id,
+                        InvestmentPrincipleVersion.version == principle.current_version,
+                    )
+                    .order_by(asc(InvestmentPrincipleVersion.id))
+                ).scalars().all())
+                if len(versions) != 1:
+                    raise InvestmentPrincipleCurrentVersionError(
+                        f"current_version_invalid:{principle.id}:{principle.current_version}:{len(versions)}"
+                    )
+                rows.append(InvestmentPrincipleCurrentItem(principle, versions[0]))
+            return rows
 
     def get_principle_detail(self, principle_id: int) -> Optional[InvestmentPrincipleDetail]:
         with self.db.get_session() as session:
